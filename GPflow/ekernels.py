@@ -63,6 +63,7 @@ class RBF(kernels.RBF):
         D = tf.shape(Xmu)[1]
         squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
             tf.zeros(D, dtype=float_type) + self.lengthscales ** 2.
+
         chol_L_plus_Xcov = tf.cholesky(tf.diag(squared_lengthscales) + Xcov[0, :-1])  # NxDxD
         all_diffs = tf.transpose(Z) - tf.expand_dims(Xmu[:-1], 2)  # NxDxM
 
@@ -91,25 +92,29 @@ class RBF(kernels.RBF):
         # use only active dimensions
         Xcov = self._slice_cov(Xcov)
         Z, Xmu = self._slice(Z, Xmu)
-        M = tf.shape(Z)[0]
+
         N = tf.shape(Xmu)[0]
         D = tf.shape(Xmu)[1]
-        lengthscales = self.lengthscales if self.ARD else tf.zeros((D,), dtype=float_type) + self.lengthscales
+        squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
+            tf.zeros(D, dtype=float_type) + self.lengthscales ** 2.
 
-        Kmms = tf.sqrt(self.K(Z, presliced=True)) / self.variance ** 0.5
-        scalemat = tf.expand_dims(tf.eye(D, dtype=float_type), 0) + 2 * Xcov * tf.reshape(lengthscales ** -2.0, [1, 1, -1])  # NxDxD
-        det = tf.matrix_determinant(scalemat)
+        chol_L_plus_Xcov = tf.cholesky(0.5 * tf.diag(squared_lengthscales) + Xcov)  # NxDxD
+        dets = tf.reduce_prod(0.5 * squared_lengthscales) ** 0.5 / tf.exp(
+            tf.reduce_sum(tf.log(tf.matrix_diag_part(chol_L_plus_Xcov)), axis=1))  # N
 
-        mat = Xcov + 0.5 * tf.expand_dims(tf.diag(lengthscales ** 2.0), 0)  # NxDxD
-        cm = tf.cholesky(mat)  # NxDxD
-        vec = 0.5 * (tf.reshape(tf.transpose(Z), [1, D, 1, M]) +
-                     tf.reshape(tf.transpose(Z), [1, D, M, 1])) - tf.reshape(Xmu, [N, D, 1, 1])  # NxDxMxM
-        svec = tf.reshape(vec, (N, D, M * M))
-        ssmI_z = tf.matrix_triangular_solve(cm, svec)  # NxDx(M*M)
-        smI_z = tf.reshape(ssmI_z, (N, D, M, M))  # NxDxMxM
-        fs = tf.reduce_sum(tf.square(smI_z), [1])  # NxMxM
+        C_inv_mu = tf.matrix_triangular_solve(chol_L_plus_Xcov, tf.expand_dims(Xmu, 2), lower=True)  # NxDx1
+        C_inv_z = tf.matrix_triangular_solve(chol_L_plus_Xcov,
+                                             tf.tile(tf.expand_dims(tf.transpose(Z) / 2., 0), [N, 1, 1]), lower=True)  # NxDxM
+        mu_CC_inv_mu = tf.expand_dims(tf.reduce_sum(tf.square(C_inv_mu), 1), 2)  # Nx1x1
+        z_CC_inv_z = tf.reduce_sum(tf.square(C_inv_z), 1)  # NxM
+        zm_CC_inv_zn = tf.matmul(C_inv_z, C_inv_z, transpose_a=True)  # NxMxM
+        two_z_CC_inv_mu = 2 * tf.matmul(C_inv_z, C_inv_mu, transpose_a=True)  # NxMx1
 
-        return self.variance ** 2.0 * tf.expand_dims(Kmms, 0) * tf.exp(-0.5 * fs) * tf.reshape(det ** -0.5, [N, 1, 1])
+        exponent_mahalanobis = mu_CC_inv_mu + tf.expand_dims(z_CC_inv_z, 1) + tf.expand_dims(z_CC_inv_z, 2) + \
+                               2 * zm_CC_inv_zn - two_z_CC_inv_mu - tf.transpose(two_z_CC_inv_mu, [0, 2, 1])  # NxMxM
+        exponent_mahalanobis = tf.exp(-0.5 * exponent_mahalanobis)  # NxMxM
+
+        return self.variance**1.5 * tf.sqrt(self.K(Z, presliced=True)) * tf.reshape(dets, [N, 1, 1]) * exponent_mahalanobis
 
 
 class Linear(kernels.Linear):
