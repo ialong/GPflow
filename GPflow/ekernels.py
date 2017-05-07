@@ -62,7 +62,7 @@ class RBF(kernels.RBF):
 
         D = tf.shape(Xmu)[1]
         squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
-            tf.zeros(D, dtype=float_type) + self.lengthscales ** 2.
+            tf.zeros((D,), dtype=float_type) + self.lengthscales ** 2.
 
         chol_L_plus_Xcov = tf.cholesky(tf.diag(squared_lengthscales) + Xcov[0, :-1])  # NxDxD
         all_diffs = tf.transpose(Z) - tf.expand_dims(Xmu[:-1], 2)  # NxDxM
@@ -96,7 +96,7 @@ class RBF(kernels.RBF):
         N = tf.shape(Xmu)[0]
         D = tf.shape(Xmu)[1]
         squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
-            tf.zeros(D, dtype=float_type) + self.lengthscales ** 2.
+            tf.zeros((D,), dtype=float_type) + self.lengthscales ** 2.
 
         chol_L_plus_Xcov = tf.cholesky(0.5 * tf.diag(squared_lengthscales) + Xcov)  # NxDxD
         dets = tf.reduce_prod(0.5 * squared_lengthscales) ** 0.5 / tf.exp(
