@@ -60,27 +60,24 @@ class RBF(kernels.RBF):
         ]):
             Xmu = tf.identity(Xmu)
 
-        N = tf.shape(Xmu)[0] - 1
         D = tf.shape(Xmu)[1]
-        Xsigmb = tf.slice(Xcov, [0, 0, 0, 0], tf.stack([-1, N, -1, -1]))
-        Xsigm = Xsigmb[0, :, :, :]  # NxDxD
-        Xsigmc = Xsigmb[1, :, :, :]  # NxDxD
-        Xmum = tf.slice(Xmu, [0, 0], tf.stack([N, -1]))
-        Xmup = Xmu[1:, :]
-        lengthscales = self.lengthscales if self.ARD else tf.zeros((D,), dtype=float_type) + self.lengthscales
-        scalemat = tf.expand_dims(tf.diag(lengthscales ** 2.0), 0) + Xsigm  # NxDxD
+        squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
+            tf.zeros(D, dtype=float_type) + self.lengthscales ** 2.
+        chol_L_plus_Xcov = tf.cholesky(tf.diag(squared_lengthscales) + Xcov[0, :-1])  # NxDxD
+        all_diffs = tf.transpose(Z) - tf.expand_dims(Xmu[:-1], 2)  # NxDxM
 
-        det = tf.matrix_determinant(
-            tf.expand_dims(tf.eye(tf.shape(Xmu)[1], dtype=float_type), 0) + tf.reshape(lengthscales ** -2.0, (1, 1, -1)) * Xsigm
-        )  # N
+        sqrt_det_L = tf.reduce_prod(squared_lengthscales) ** 0.5
+        sqrt_det_L_plus_Xcov = tf.exp(tf.reduce_sum(tf.log(tf.matrix_diag_part(chol_L_plus_Xcov)), axis=1))
+        determinants = self.variance * sqrt_det_L / sqrt_det_L_plus_Xcov  # (N,)
 
-        vec = tf.expand_dims(tf.transpose(Z), 0) - tf.expand_dims(Xmum, 2)  # NxDxM
-        smIvec = tf.matrix_solve(scalemat, vec)  # NxDxM
-        q = tf.reduce_sum(smIvec * vec, [1])  # NxM
+        exponent_mahalanobis = tf.matrix_triangular_solve(chol_L_plus_Xcov, all_diffs, lower=True)
+        exponent_mahalanobis = tf.exp(-0.5 * tf.reduce_sum(tf.square(exponent_mahalanobis), axis=1))  # NxM
 
-        addvec = tf.matmul(smIvec, Xsigmc, transpose_a=True) + tf.expand_dims(Xmup, 1)  # NxMxD
+        expectation_term = tf.cholesky_solve(chol_L_plus_Xcov, all_diffs)
+        expectation_term = tf.matmul(Xcov[1, :-1], expectation_term, transpose_a=True)
+        expectation_term = tf.transpose(tf.expand_dims(Xmu[1:], 2) + expectation_term, [0, 2, 1])  # NxMxD
 
-        return self.variance * addvec * tf.reshape(det ** -0.5, (N, 1, 1)) * tf.expand_dims(tf.exp(-0.5 * q), 2)
+        return tf.expand_dims(tf.expand_dims(determinants, 1) * exponent_mahalanobis, 2) * expectation_term
 
     def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
         """
