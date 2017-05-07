@@ -44,12 +44,13 @@ class RBF(kernels.RBF):
 
         return self.variance * tf.exp(-0.5 * q - tf.expand_dims(half_log_dets, 1))
 
-    def exKxz(self, Z, Xmu, Xcov):
+    def exKxz(self, Z, Xmu, Xcov, CI=None):
         """
         <x_t K_{x_{t-1}, Z}>_q_{x_{t-1:t}}
-        :param Z: MxD inducing inputs
-        :param Xmu: X mean (N+1xD)
-        :param Xcov: 2x(N+1)xDxD
+        :param Z: inducing inputs (MxD) or (Mx(D+E)) 
+        :param Xmu: X means (N+1xD)
+        :param Xcov: X covariance matrices (2x(N+1)xDxD)
+        :param CI: (optional) control inputs (NxE)
         :return: NxMxD
         """
         with tf.control_dependencies([
@@ -81,12 +82,13 @@ class RBF(kernels.RBF):
 
         return self.variance * addvec * tf.reshape(det ** -0.5, (N, 1, 1)) * tf.expand_dims(tf.exp(-0.5 * q), 2)
 
-    def eKzxKxz(self, Z, Xmu, Xcov):
+    def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
         """
         Also known as Phi_2.
-        :param Z: MxD
-        :param Xmu: X mean (NxD)
+        :param Z: inducing inputs (MxD) or (Mx(D+E))
+        :param Xmu: X means (NxD)
         :param Xcov: X covariance matrices (NxDxD)
+        :param CI: (optional) control inputs (NxE)
         :return: NxMxM
         """
         # use only active dimensions
