@@ -54,8 +54,6 @@ class RBF(kernels.RBF):
         :return: NxMxD
         """
         with tf.control_dependencies([
-            tf.assert_equal(tf.shape(Xmu)[1], tf.constant(self.input_dim, dtype=int_type),
-                            message="Currently cannot handle slicing in exKxz."),
             tf.assert_equal(tf.shape(Xmu)[0]-1, tf.shape(Xcov)[1], name="assert_Xmu_Xcov_shape")
         ]):
             Xmu = tf.identity(Xmu)
