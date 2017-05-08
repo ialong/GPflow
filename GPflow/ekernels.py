@@ -48,15 +48,15 @@ class RBF(kernels.RBF):
         """
         <x_t K_{x_{t-1}, Z}>_q_{x_{t-1:t}}
         :param Z: inducing inputs (MxD) or (Mx(D+E)) 
-        :param Xmu: X means (N+1xD)
-        :param Xcov: X covariance matrices (2x(N+1)xDxD)
+        :param Xmu: X means ((N+1)xD)
+        :param Xcov: X covariance matrices (2xNxDxD)
         :param CI: (optional) control inputs (NxE)
         :return: NxMxD
         """
         with tf.control_dependencies([
             tf.assert_equal(tf.shape(Xmu)[1], tf.constant(self.input_dim, dtype=int_type),
                             message="Currently cannot handle slicing in exKxz."),
-            tf.assert_equal(tf.shape(Xmu), tf.shape(Xcov)[1:3], name="assert_Xmu_Xcov_shape")
+            tf.assert_equal(tf.shape(Xmu)[0]-1, tf.shape(Xcov)[1], name="assert_Xmu_Xcov_shape")
         ]):
             Xmu = tf.identity(Xmu)
 
@@ -65,7 +65,7 @@ class RBF(kernels.RBF):
         squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
             tf.zeros((D+E,), dtype=float_type) + self.lengthscales ** 2.
 
-        chol_L_plus_Xcov = tf.cholesky(tf.diag(squared_lengthscales[:D]) + Xcov[0, :-1])  # NxDxD
+        chol_L_plus_Xcov = tf.cholesky(tf.diag(squared_lengthscales[:D]) + Xcov[0])  # NxDxD
         all_diffs = tf.transpose(Z[:, :D]) - tf.expand_dims(Xmu[:-1], 2)  # NxDxM
 
         sqrt_det_L = tf.reduce_prod(squared_lengthscales[:D]) ** 0.5
@@ -84,7 +84,7 @@ class RBF(kernels.RBF):
         exponent_mahalanobis = tf.exp(-0.5 * exponent_mahalanobis)  # NxM
 
         expectation_term = tf.cholesky_solve(chol_L_plus_Xcov, all_diffs)
-        expectation_term = tf.matmul(Xcov[1, :-1], expectation_term, transpose_a=True)
+        expectation_term = tf.matmul(Xcov[1], expectation_term, transpose_a=True)
         expectation_term = tf.transpose(tf.expand_dims(Xmu[1:], 2) + expectation_term, [0, 2, 1])  # NxMxD
 
         return self.variance * (determinants[:, None] * exponent_mahalanobis)[:, :, None] * expectation_term
