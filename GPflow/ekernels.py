@@ -95,20 +95,30 @@ class RBF(kernels.RBF):
 
         N = tf.shape(Xmu)[0]
         D = tf.shape(Xmu)[1]
-        squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
-            tf.zeros((D,), dtype=float_type) + self.lengthscales ** 2.
+        E = 0 if CI is None else tf.shape(CI)[1]
 
-        chol_L_plus_Xcov = tf.cholesky(0.5 * tf.diag(squared_lengthscales) + Xcov)  # NxDxD
-        dets = tf.reduce_prod(0.5 * squared_lengthscales) ** 0.5 / tf.exp(
+        squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
+            tf.zeros((D+E,), dtype=float_type) + self.lengthscales ** 2.
+
+        chol_L_plus_Xcov = tf.cholesky(0.5 * tf.diag(squared_lengthscales[:D]) + Xcov)  # NxDxD
+        dets = tf.reduce_prod(0.5 * squared_lengthscales[:D]) ** 0.5 / tf.exp(
             tf.reduce_sum(tf.log(tf.matrix_diag_part(chol_L_plus_Xcov)), axis=1))  # N
 
         C_inv_mu = tf.matrix_triangular_solve(chol_L_plus_Xcov, tf.expand_dims(Xmu, 2), lower=True)  # NxDx1
         C_inv_z = tf.matrix_triangular_solve(chol_L_plus_Xcov,
-                                             tf.tile(tf.expand_dims(tf.transpose(Z) / 2., 0), [N, 1, 1]), lower=True)  # NxDxM
+                                             tf.tile(tf.expand_dims(tf.transpose(Z[:, :D]) / 2., 0), [N, 1, 1]), lower=True)  # NxDxM
         mu_CC_inv_mu = tf.expand_dims(tf.reduce_sum(tf.square(C_inv_mu), 1), 2)  # Nx1x1
         z_CC_inv_z = tf.reduce_sum(tf.square(C_inv_z), 1)  # NxM
         zm_CC_inv_zn = tf.matmul(C_inv_z, C_inv_z, transpose_a=True)  # NxMxM
         two_z_CC_inv_mu = 2 * tf.matmul(C_inv_z, C_inv_mu, transpose_a=True)  # NxMx1
+
+        if CI is not None:
+            ci_twoL_inv = CI / (0.5 * squared_lengthscales[D:]) ** 0.5  # NxE
+            z_twoL_inv = Z[:, D:] / (2. * squared_lengthscales[D:]) ** 0.5 # MxE
+            mu_CC_inv_mu += tf.reshape(tf.reduce_sum(tf.square(ci_twoL_inv), 1), [N, 1, 1])  # Nx1x1
+            z_CC_inv_z += tf.reduce_sum(tf.square(z_twoL_inv), 1)  # M -> NxM
+            zm_CC_inv_zn += tf.matmul(z_twoL_inv, z_twoL_inv, transpose_b=True)  # MxM -> NxMxM
+            two_z_CC_inv_mu += 2 * tf.expand_dims(tf.matmul(ci_twoL_inv, z_twoL_inv, transpose_b=True), 2)  # NxMx1
 
         exponent_mahalanobis = mu_CC_inv_mu + tf.expand_dims(z_CC_inv_z, 1) + tf.expand_dims(z_CC_inv_z, 2) + \
                                2 * zm_CC_inv_zn - two_z_CC_inv_mu - tf.transpose(two_z_CC_inv_mu, [0, 2, 1])  # NxMxM
