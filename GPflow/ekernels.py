@@ -61,24 +61,33 @@ class RBF(kernels.RBF):
             Xmu = tf.identity(Xmu)
 
         D = tf.shape(Xmu)[1]
+        E = 0 if CI is None else tf.shape(CI)[1]
         squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
-            tf.zeros((D,), dtype=float_type) + self.lengthscales ** 2.
+            tf.zeros((D+E,), dtype=float_type) + self.lengthscales ** 2.
 
-        chol_L_plus_Xcov = tf.cholesky(tf.diag(squared_lengthscales) + Xcov[0, :-1])  # NxDxD
-        all_diffs = tf.transpose(Z) - tf.expand_dims(Xmu[:-1], 2)  # NxDxM
+        chol_L_plus_Xcov = tf.cholesky(tf.diag(squared_lengthscales[:D]) + Xcov[0, :-1])  # NxDxD
+        all_diffs = tf.transpose(Z[:, :D]) - tf.expand_dims(Xmu[:-1], 2)  # NxDxM
 
-        sqrt_det_L = tf.reduce_prod(squared_lengthscales) ** 0.5
+        sqrt_det_L = tf.reduce_prod(squared_lengthscales[:D]) ** 0.5
         sqrt_det_L_plus_Xcov = tf.exp(tf.reduce_sum(tf.log(tf.matrix_diag_part(chol_L_plus_Xcov)), axis=1))
-        determinants = self.variance * sqrt_det_L / sqrt_det_L_plus_Xcov  # (N,)
+        determinants = sqrt_det_L / sqrt_det_L_plus_Xcov  # N
 
-        exponent_mahalanobis = tf.matrix_triangular_solve(chol_L_plus_Xcov, all_diffs, lower=True)
-        exponent_mahalanobis = tf.exp(-0.5 * tf.reduce_sum(tf.square(exponent_mahalanobis), axis=1))  # NxM
+        exponent_mahalanobis = tf.matrix_triangular_solve(chol_L_plus_Xcov, all_diffs, lower=True)  # NxDxM
+        exponent_mahalanobis = tf.reduce_sum(tf.square(exponent_mahalanobis), 1)  # NxM
+        if CI is not None:
+            ci_L_inv =  CI / squared_lengthscales[D:] ** 0.5  # NxE
+            z_L_inv = Z[:, D:] / squared_lengthscales[D:] ** 0.5  # MxE
+            exponent_mahalanobis += tf.reduce_sum(tf.square(ci_L_inv), 1) \
+                                    + tf.expand_dims(tf.reduce_sum(tf.square(ci_L_inv), 1), 1) \
+                                    - 2*tf.matmul(ci_L_inv, z_L_inv, transpose_b=True)
+
+        exponent_mahalanobis = tf.exp(-0.5 * exponent_mahalanobis)  # NxM
 
         expectation_term = tf.cholesky_solve(chol_L_plus_Xcov, all_diffs)
         expectation_term = tf.matmul(Xcov[1, :-1], expectation_term, transpose_a=True)
         expectation_term = tf.transpose(tf.expand_dims(Xmu[1:], 2) + expectation_term, [0, 2, 1])  # NxMxD
 
-        return tf.expand_dims(tf.expand_dims(determinants, 1) * exponent_mahalanobis, 2) * expectation_term
+        return self.variance * (determinants[:, None] * exponent_mahalanobis)[:, :, None] * expectation_term
 
     def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
         """
@@ -100,9 +109,9 @@ class RBF(kernels.RBF):
         squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
             tf.zeros((D+E,), dtype=float_type) + self.lengthscales ** 2.
 
+        sqrt_det_L = tf.reduce_prod(0.5 * squared_lengthscales[:D]) ** 0.5
         chol_L_plus_Xcov = tf.cholesky(0.5 * tf.diag(squared_lengthscales[:D]) + Xcov)  # NxDxD
-        dets = tf.reduce_prod(0.5 * squared_lengthscales[:D]) ** 0.5 / tf.exp(
-            tf.reduce_sum(tf.log(tf.matrix_diag_part(chol_L_plus_Xcov)), axis=1))  # N
+        dets = sqrt_det_L / tf.exp(tf.reduce_sum(tf.log(tf.matrix_diag_part(chol_L_plus_Xcov)), axis=1))  # N
 
         C_inv_mu = tf.matrix_triangular_solve(chol_L_plus_Xcov, tf.expand_dims(Xmu, 2), lower=True)  # NxDx1
         C_inv_z = tf.matrix_triangular_solve(chol_L_plus_Xcov,
