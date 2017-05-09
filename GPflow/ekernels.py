@@ -150,7 +150,7 @@ class Linear(kernels.Linear):
         Z, Xmu = self._slice(Z, Xmu)
         return self.variance * tf.matmul(Xmu, Z, transpose_b=True)
 
-    def exKxz(self, Z, Xmu, Xcov):
+    def exKxz(self, Z, Xmu, Xcov, CI=None):
         with tf.control_dependencies([
             tf.assert_equal(tf.shape(Xmu)[1], tf.constant(self.input_dim, int_type),
                             message="Currently cannot handle slicing in exKxz."),
@@ -164,7 +164,7 @@ class Linear(kernels.Linear):
         op = tf.expand_dims(Xmum, 2) * tf.expand_dims(Xmup, 1) + Xcov[1, :-1, :, :]  # NxDxD
         return self.variance * tf.matmul(tf.tile(tf.expand_dims(Z, 0), (N, 1, 1)), op)
 
-    def eKzxKxz(self, Z, Xmu, Xcov):
+    def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
         """
         exKxz
         :param Z: MxD
