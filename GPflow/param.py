@@ -204,8 +204,11 @@ class Param(Parentable):
         if self.fixed:
             return pd.Series([self.value for _ in range(samples.shape[0])], name=self.long_name)
         start, _ = self.highest_parent.get_param_index(self)
-        end = start + self.transform.free_state_size(self.shape)
+        free_state_size = self.transform.free_state_size(self.shape)
+        end = start + free_state_size
         samples = samples[:, start:end]
+        if self.size == free_state_size:
+            samples = samples.reshape((samples.shape[0],) + self.shape)
         samples = [np.atleast_1d(self.transform.forward(s)) for s in samples]
         return pd.Series(samples, name=self.long_name)
 
