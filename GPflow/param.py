@@ -207,9 +207,8 @@ class Param(Parentable):
         free_state_size = self.transform.free_state_size(self.shape)
         end = start + free_state_size
         samples = samples[:, start:end]
-        if self.size == free_state_size:
-            samples = samples.reshape((samples.shape[0],) + self.shape)
-        samples = [np.atleast_1d(self.transform.forward(s)) for s in samples]
+        samples = [np.atleast_1d(self.transform.forward(s).reshape(self.shape))
+                   for s in samples]
         return pd.Series(samples, name=self.long_name)
 
     def make_tf_array(self, free_array):
