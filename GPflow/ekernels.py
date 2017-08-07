@@ -35,7 +35,7 @@ class RBF(kernels.RBF):
         lengthscales = self.lengthscales if self.ARD else tf.zeros((D,), dtype=float_type) + self.lengthscales
 
         vec = tf.expand_dims(Xmu, 2) - tf.expand_dims(tf.transpose(Z), 0)  # NxDxM
-        chols = tf.cholesky(tf.expand_dims(tf.diag(lengthscales ** 2), 0) + Xcov)
+        chols = tf.cholesky(tf.expand_dims(tf.matrix_diag(lengthscales ** 2), 0) + Xcov)
         Lvec = tf.matrix_triangular_solve(chols, vec)
         q = tf.reduce_sum(Lvec ** 2, [1])
 
@@ -63,7 +63,7 @@ class RBF(kernels.RBF):
         squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
             tf.zeros((D+E,), dtype=float_type) + self.lengthscales ** 2.
 
-        chol_L_plus_Xcov = tf.cholesky(tf.diag(squared_lengthscales[:D]) + Xcov[0])  # NxDxD
+        chol_L_plus_Xcov = tf.cholesky(tf.matrix_diag(squared_lengthscales[:D]) + Xcov[0])  # NxDxD
         all_diffs = tf.transpose(Z[:, :D]) - tf.expand_dims(Xmu[:-1], 2)  # NxDxM
 
         sqrt_det_L = tf.reduce_prod(squared_lengthscales[:D]) ** 0.5
@@ -108,7 +108,7 @@ class RBF(kernels.RBF):
             tf.zeros((D+E,), dtype=float_type) + self.lengthscales ** 2.
 
         sqrt_det_L = tf.reduce_prod(0.5 * squared_lengthscales[:D]) ** 0.5
-        chol_L_plus_Xcov = tf.cholesky(0.5 * tf.diag(squared_lengthscales[:D]) + Xcov)  # NxDxD
+        chol_L_plus_Xcov = tf.cholesky(0.5 * tf.matrix_diag(squared_lengthscales[:D]) + Xcov)  # NxDxD
         dets = sqrt_det_L / tf.exp(tf.reduce_sum(tf.log(tf.matrix_diag_part(chol_L_plus_Xcov)), axis=1))  # N
 
         C_inv_mu = tf.matrix_triangular_solve(chol_L_plus_Xcov, tf.expand_dims(Xmu, 2), lower=True)  # NxDx1
@@ -246,7 +246,7 @@ class Add(kernels.Add):
 
         const = rbf.variance * lin.variance * tf.reduce_prod(lengthscales)
 
-        gaussmat = Xcov + tf.diag(lengthscales2)[None, :, :]  # NxDxD
+        gaussmat = Xcov + tf.matrix_diag(lengthscales2)[None, :, :]  # NxDxD
 
         det = tf.matrix_determinant(gaussmat) ** -0.5  # N
 
