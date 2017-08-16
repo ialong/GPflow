@@ -75,7 +75,7 @@ class RBF(kernels.RBF):
         if CI is not None:
             ci_L_inv =  CI / squared_lengthscales[D:] ** 0.5  # NxE
             z_L_inv = Z[:, D:] / squared_lengthscales[D:] ** 0.5  # MxE
-            exponent_mahalanobis += tf.reduce_sum(tf.square(ci_L_inv), 1) \
+            exponent_mahalanobis += tf.reduce_sum(tf.square(z_L_inv), 1) \
                                     + tf.expand_dims(tf.reduce_sum(tf.square(ci_L_inv), 1), 1) \
                                     - 2*tf.matmul(ci_L_inv, z_L_inv, transpose_b=True)
 
