@@ -136,13 +136,13 @@ class Kern(Parameterized):
     def compute_eKxz(self, Z, Xmu, Xcov):
         return self.eKxz(Z, Xmu, Xcov)
 
-    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type, [None, None, None, None]))
-    def compute_exKxz(self, Z, Xmu, Xcov):
-        return self.exKxz(Z, Xmu, Xcov)
+    @AutoFlow((float_type,), (float_type,), (float_type,), (float_type,))
+    def compute_exKxz(self, Z, Xmu, Xcov, CI=None):
+        return self.exKxz(Z, Xmu, Xcov, CI)
 
-    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,))
-    def compute_eKzxKxz(self, Z, Xmu, Xcov):
-        return self.eKzxKxz(Z, Xmu, Xcov)
+    @AutoFlow((float_type,), (float_type,), (float_type,), (float_type,))
+    def compute_eKzxKxz(self, Z, Xmu, Xcov, CI=none):
+        return self.eKzxKxz(Z, Xmu, Xcov, CI)
 
     def _check_quadrature(self):
         if settings.numerics.ekern_quadrature == "warn":
