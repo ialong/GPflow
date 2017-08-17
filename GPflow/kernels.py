@@ -141,7 +141,7 @@ class Kern(Parameterized):
         return self.exKxz(Z, Xmu, Xcov, CI)
 
     @AutoFlow((float_type,), (float_type,), (float_type,), (float_type,))
-    def compute_eKzxKxz(self, Z, Xmu, Xcov, CI=none):
+    def compute_eKzxKxz(self, Z, Xmu, Xcov, CI=None):
         return self.eKzxKxz(Z, Xmu, Xcov, CI)
 
     def _check_quadrature(self):
