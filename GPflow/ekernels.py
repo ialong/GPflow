@@ -12,7 +12,7 @@ float_type = settings.dtypes.float_type
 
 
 class RBF(kernels.RBF):
-    def eKdiag(self, X, Xcov=None):
+    def eKdiag(self, X, Xcov=None, CI=None):
         """
         Also known as phi_0.
         :param X:
@@ -20,7 +20,7 @@ class RBF(kernels.RBF):
         """
         return self.Kdiag(X)
 
-    def eKxz(self, Z, Xmu, Xcov):
+    def eKxz(self, Z, Xmu, Xcov, CI=None):
         """
         Also known as phi_1: <K_{x, Z}>_{q(x)}.
         :param Z: MxD inducing inputs
