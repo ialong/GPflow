@@ -388,7 +388,7 @@ class GPModel(Model):
             #: Y is a data matrix, rows correspond to the rows in X, columns are treated independently
             Y = DataHolder(Y)
 
-        likelihood._check_targets(Y.value)
+        #likelihood._check_targets(Y.value)
         self.X, self.Y = X, Y
         self._session = None
 
