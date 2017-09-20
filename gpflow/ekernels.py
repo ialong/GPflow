@@ -14,39 +14,53 @@ float_type = settings.dtypes.float_type
 class RBF(kernels.RBF):
     def eKdiag(self, X, Xcov=None, CI=None):
         """
-        Also known as phi_0.
-        :param X:
+        <diag(K_{X, X})>_{q(X)}
+        :param X: kernel input (NxD)
         :return: N
         """
         return self.Kdiag(X)
 
     def eKxz(self, Z, Xmu, Xcov, CI=None):
         """
-        Also known as phi_1: <K_{x, Z}>_{q(x)}.
-        :param Z: MxD inducing inputs
-        :param Xmu: X mean (NxD)
-        :param Xcov: NxDxD
+        <K_{x, Z}>_{q(x)}
+        :param Z: inducing inputs (MxD) or (Mx(D+E))
+        :param Xmu: X means (NxD)
+        :param Xcov: X covariance matrices (NxDxD)
+        :param CI: (optional) control inputs (NxE)
         :return: NxM
         """
         # use only active dimensions
         Xcov = self._slice_cov(Xcov)
         Z, Xmu = self._slice(Z, Xmu)
+
         D = tf.shape(Xmu)[1]
-        lengthscales = self.lengthscales if self.ARD else tf.zeros((D,), dtype=float_type) + self.lengthscales
+        E = 0 if CI is None else tf.shape(CI)[1]
+        lengthscales = self.lengthscales if self.ARD else \
+            tf.zeros((D + E,), dtype=float_type) + self.lengthscales
 
-        vec = tf.expand_dims(Xmu, 2) - tf.expand_dims(tf.transpose(Z), 0)  # NxDxM
-        chols = tf.cholesky(tf.expand_dims(tf.matrix_diag(lengthscales ** 2), 0) + Xcov)
-        Lvec = tf.matrix_triangular_solve(chols, vec)
-        q = tf.reduce_sum(Lvec ** 2, [1])
+        chol_L_plus_Xcov = tf.cholesky(tf.matrix_diag(lengthscales[:D] ** 2) + Xcov)  # NxDxD
+        all_diffs = tf.transpose(Z[:, :D]) - tf.expand_dims(Xmu, 2)  # NxDxM
 
-        chol_diags = tf.matrix_diag_part(chols)  # N x D
-        half_log_dets = tf.reduce_sum(tf.log(chol_diags), 1) - tf.reduce_sum(tf.log(lengthscales))  # N,
+        sqrt_det_L = tf.reduce_prod(lengthscales[:D])
+        sqrt_det_L_plus_Xcov = tf.exp(tf.reduce_sum(tf.log(tf.matrix_diag_part(chol_L_plus_Xcov)), axis=1))
+        determinants = sqrt_det_L / sqrt_det_L_plus_Xcov  # N
 
-        return self.variance * tf.exp(-0.5 * q - tf.expand_dims(half_log_dets, 1))
+        exponent_mahalanobis = tf.matrix_triangular_solve(chol_L_plus_Xcov, all_diffs, lower=True)  # NxDxM
+        exponent_mahalanobis = tf.reduce_sum(tf.square(exponent_mahalanobis), 1)  # NxM
+        if CI is not None:
+            ci_L_inv = CI / lengthscales[D:]  # NxE
+            z_L_inv = Z[:, D:] / lengthscales[D:]  # MxE
+            exponent_mahalanobis += tf.reduce_sum(tf.square(z_L_inv), 1) \
+                                    + tf.expand_dims(tf.reduce_sum(tf.square(ci_L_inv), 1), 1) \
+                                    - 2 * tf.matmul(ci_L_inv, z_L_inv, transpose_b=True)
+
+        exponent_mahalanobis = tf.exp(-0.5 * exponent_mahalanobis)  # NxM
+
+        return self.variance * (determinants[:, None] * exponent_mahalanobis)
 
     def exKxz(self, Z, Xmu, Xcov, CI=None):
         """
-        <x_t K_{x_{t-1}, Z}>_q_{x_{t-1:t}}
+        <(x_t K_{x_{t-1}, Z})^T>_q_{x_{t-1:t}}
         :param Z: inducing inputs (MxD) or (Mx(D+E)) 
         :param Xmu: X means ((N+1)xD)
         :param Xcov: X covariance matrices (2xNxDxD)
@@ -60,36 +74,34 @@ class RBF(kernels.RBF):
 
         D = tf.shape(Xmu)[1]
         E = 0 if CI is None else tf.shape(CI)[1]
-        squared_lengthscales = self.lengthscales ** 2. if self.ARD else \
-            tf.zeros((D+E,), dtype=float_type) + self.lengthscales ** 2.
+        lengthscales = self.lengthscales if self.ARD else \
+            tf.zeros((D+E,), dtype=float_type) + self.lengthscales
 
-        chol_L_plus_Xcov = tf.cholesky(tf.matrix_diag(squared_lengthscales[:D]) + Xcov[0])  # NxDxD
+        chol_L_plus_Xcov = tf.cholesky(tf.matrix_diag(lengthscales[:D] ** 2) + Xcov[0])  # NxDxD
         all_diffs = tf.transpose(Z[:, :D]) - tf.expand_dims(Xmu[:-1], 2)  # NxDxM
 
-        sqrt_det_L = tf.reduce_prod(squared_lengthscales[:D]) ** 0.5
+        sqrt_det_L = tf.reduce_prod(lengthscales[:D])
         sqrt_det_L_plus_Xcov = tf.exp(tf.reduce_sum(tf.log(tf.matrix_diag_part(chol_L_plus_Xcov)), axis=1))
         determinants = sqrt_det_L / sqrt_det_L_plus_Xcov  # N
 
-        exponent_mahalanobis = tf.matrix_triangular_solve(chol_L_plus_Xcov, all_diffs, lower=True)  # NxDxM
-        exponent_mahalanobis = tf.reduce_sum(tf.square(exponent_mahalanobis), 1)  # NxM
+        exponent_mahalanobis = tf.cholesky_solve(chol_L_plus_Xcov, all_diffs)  # NxDxM
+        expectation_term = tf.matmul(Xcov[1], exponent_mahalanobis, transpose_a=True)
+        expectation_term = tf.transpose(tf.expand_dims(Xmu[1:], 2) + expectation_term, [0, 2, 1])  # NxMxD
+
+        exponent_mahalanobis = tf.reduce_sum(all_diffs * exponent_mahalanobis, 1)  # NxM
         if CI is not None:
-            ci_L_inv =  CI / squared_lengthscales[D:] ** 0.5  # NxE
-            z_L_inv = Z[:, D:] / squared_lengthscales[D:] ** 0.5  # MxE
+            ci_L_inv =  CI / lengthscales[D:]  # NxE
+            z_L_inv = Z[:, D:] / lengthscales[D:]  # MxE
             exponent_mahalanobis += tf.reduce_sum(tf.square(z_L_inv), 1) \
                                     + tf.expand_dims(tf.reduce_sum(tf.square(ci_L_inv), 1), 1) \
                                     - 2*tf.matmul(ci_L_inv, z_L_inv, transpose_b=True)
-
         exponent_mahalanobis = tf.exp(-0.5 * exponent_mahalanobis)  # NxM
-
-        expectation_term = tf.cholesky_solve(chol_L_plus_Xcov, all_diffs)
-        expectation_term = tf.matmul(Xcov[1], expectation_term, transpose_a=True)
-        expectation_term = tf.transpose(tf.expand_dims(Xmu[1:], 2) + expectation_term, [0, 2, 1])  # NxMxD
 
         return self.variance * (determinants[:, None] * exponent_mahalanobis)[:, :, None] * expectation_term
 
     def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
         """
-        Also known as Phi_2.
+        <K_{Z, x}K_{x, Z}>_{q(x)}
         :param Z: inducing inputs (MxD) or (Mx(D+E))
         :param Xmu: X means (NxD)
         :param Xcov: X covariance matrices (NxDxD)
