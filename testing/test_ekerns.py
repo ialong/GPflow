@@ -521,7 +521,7 @@ class TestAddCrossCalcs(GPflowTestCase):
             free_vars, tfZ, tfXmu, tfXcov = tf.placeholder(tf.float64), tf.placeholder(tf.float64), tf.placeholder(tf.float64), tf.placeholder(tf.float64)
             self.add.make_tf_array(free_vars)
             with self.add.tf_mode():
-                tfa = self.add.Linear_RBF_eKxzKzx(self.add.kern_list[0], self.add.kern_list[1], tfZ, tfXmu, tfXcov)
+                tfa = self.add.Linear_RBF_eKzxKxz(self.add.kern_list[0], self.add.kern_list[1], tfZ, tfXmu, tfXcov)
                 tfb = self.add.quad_eKzx1Kxz2(self.add.kern_list[0], self.add.kern_list[1], tfZ, tfXmu, tfXcov)
 
             sess = tf.Session()

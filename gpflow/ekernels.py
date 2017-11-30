@@ -147,6 +147,80 @@ class RBF(kernels.RBF):
 
 
 class Linear(kernels.Linear):
+    def eKdiag(self, X, Xcov, CI=None):
+        if self.ARD:
+            raise NotImplementedError  # TODO
+        # use only active dimensions
+        X, _ = self._slice(X, None)
+        Xcov = self._slice_cov(Xcov)
+        return self.variance * (tf.reduce_sum(tf.square(X), 1) + tf.reduce_sum(tf.matrix_diag_part(Xcov), 1))
+
+    def eKxz(self, Z, Xmu, Xcov, CI=None):
+        if self.ARD:
+            raise NotImplementedError  # TODO
+        # use only active dimensions
+        Z, Xmu = self._slice(Z, Xmu)
+        return self.variance * tf.matmul(Xmu, Z, transpose_b=True)
+
+    def exKxz(self, Z, Xmu, Xcov, CI=None):
+        with tf.control_dependencies([
+            tf.assert_equal(tf.shape(Xmu)[1], tf.constant(self.input_dim, int_type),
+                            message="Currently cannot handle slicing in exKxz."),
+            tf.assert_equal(tf.shape(Xmu)[0] - 1, tf.shape(Xcov)[1], name="assert_Xmu_Xcov_shape")
+        ]):
+            Xmu = tf.identity(Xmu)
+
+        N = tf.shape(Xmu)[0] - 1
+        Xmum = Xmu[:-1, :]
+        Xmup = Xmu[1:, :]
+        op = tf.expand_dims(Xmum, 2) * tf.expand_dims(Xmup, 1) + Xcov[1]  # NxDxD
+        return self.variance * tf.matmul(tf.tile(tf.expand_dims(Z, 0), (N, 1, 1)), op)
+
+    def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
+        """
+        exKxz
+        :param Z: MxD
+        :param Xmu: NxD
+        :param Xcov: NxDxD
+        :return:
+        """
+        # use only active dimensions
+        Xcov = self._slice_cov(Xcov)
+        Z, Xmu = self._slice(Z, Xmu)
+        N = tf.shape(Xmu)[0]
+        mom2 = tf.expand_dims(Xmu, 1) * tf.expand_dims(Xmu, 2) + Xcov  # NxDxD
+        eZ = tf.tile(tf.expand_dims(Z, 0), (N, 1, 1))  # NxMxD
+        return self.variance ** 2.0 * tf.matmul(tf.matmul(eZ, mom2), eZ, transpose_b=True)
+
+
+class Add(kernels.Add):
+    """
+    Add
+    This version of Add will call the corresponding kernel expectations for each of the summed kernels. This will be
+    much better for kernels with analytically calculated kernel expectations. If quadrature is to be used, it's probably
+    better to do quadrature on the summed kernel function using `gpflow.kernels.Add` instead.
+    """
+
+    def __init__(self, kern_list):
+        self.crossexp_funcs = {frozenset([Linear, RBF]): self.Linear_RBF_eKzxKxz}
+        # self.crossexp_funcs = {}
+        super(Add, self).__init__(kern_list)
+
+    def eKdiag(self, X, Xcov, CI=None):
+        return reduce(tf.add, [k.eKdiag(X, Xcov, CI) for k in self.kern_list])
+
+    def eKxz(self, Z, Xmu, Xcov, CI=None):
+        return reduce(tf.add, [k.eKxz(Z, Xmu, Xcov, CI) for k in self.kern_list])
+
+    def exKxz(self, Z, Xmu, Xcov, CI=None):
+        return reduce(tf.add, [k.exKxz(Z, Xmu, Xcov, CI) for k in self.kern_list])
+
+    def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
+        all_sum = reduce(tf.add, [k.eKzxKxz(Z, Xmu, Xcov, CI) for k in self.kern_list])
+        return all_sum
+
+
+class OldLinear(kernels.Linear):
     def eKdiag(self, X, Xcov):
         if self.ARD:
             raise NotImplementedError
@@ -193,7 +267,7 @@ class Linear(kernels.Linear):
         return self.variance ** 2.0 * tf.matmul(tf.matmul(eZ, mom2), eZ, transpose_b=True)
 
 
-class Add(kernels.Add):
+class OldAdd(kernels.Add):
     """
     Add
     This version of Add will call the corresponding kernel expectations for each of the summed kernels. This will be
@@ -202,26 +276,26 @@ class Add(kernels.Add):
     """
 
     def __init__(self, kern_list):
-        self.crossexp_funcs = {frozenset([Linear, RBF]): self.Linear_RBF_eKxzKzx}
+        self.crossexp_funcs = {frozenset([Linear, RBF]): self.Linear_RBF_eKzxKxz}
         # self.crossexp_funcs = {}
-        kernels.Add.__init__(self, kern_list)
+        super(OldAdd, self).__init__(kern_list)
 
-    def eKdiag(self, X, Xcov):
-        return reduce(tf.add, [k.eKdiag(X, Xcov) for k in self.kern_list])
+    def eKdiag(self, X, Xcov, CI=None):
+        return reduce(tf.add, [k.eKdiag(X, Xcov, CI) for k in self.kern_list])
 
-    def eKxz(self, Z, Xmu, Xcov):
-        return reduce(tf.add, [k.eKxz(Z, Xmu, Xcov) for k in self.kern_list])
+    def eKxz(self, Z, Xmu, Xcov, CI=None):
+        return reduce(tf.add, [k.eKxz(Z, Xmu, Xcov, CI) for k in self.kern_list])
 
-    def exKxz(self, Z, Xmu, Xcov):
-        return reduce(tf.add, [k.exKxz(Z, Xmu, Xcov) for k in self.kern_list])
+    def exKxz(self, Z, Xmu, Xcov, CI=None):
+        return reduce(tf.add, [k.exKxz(Z, Xmu, Xcov, CI) for k in self.kern_list])
 
-    def eKzxKxz(self, Z, Xmu, Xcov):
-        all_sum = reduce(tf.add, [k.eKzxKxz(Z, Xmu, Xcov) for k in self.kern_list])
+    def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
+        all_sum = reduce(tf.add, [k.eKzxKxz(Z, Xmu, Xcov, CI) for k in self.kern_list])
 
         if self.on_separate_dimensions and Xcov.get_shape().ndims == 2:
             # If we're on separate dimensions and the covariances are diagonal, we don't need Cov[Kzx1Kxz2].
             crossmeans = []
-            eKxzs = [k.eKxz(Z, Xmu, Xcov) for k in self.kern_list]
+            eKxzs = [k.eKxz(Z, Xmu, Xcov, CI) for k in self.kern_list]
             for i, Ka in enumerate(eKxzs):
                 for Kb in eKxzs[i + 1:]:
                     op = Ka[:, None, :] * Kb[:, :, None]
@@ -242,7 +316,7 @@ class Add(kernels.Add):
                     crossexps.append(crossexp)
             return all_sum + reduce(tf.add, crossexps)
 
-    def Linear_RBF_eKxzKzx(self, Ka, Kb, Z, Xmu, Xcov):
+    def Linear_RBF_eKzxKxz(self, Ka, Kb, Z, Xmu, Xcov):
         Xcov = self._slice_cov(Xcov)
         Z, Xmu = self._slice(Z, Xmu)
         lin, rbf = (Ka, Kb) if type(Ka) is Linear else (Kb, Ka)

@@ -132,16 +132,32 @@ class Kern(Parameterized):
     def compute_eKdiag(self, X, Xcov=None):
         return self.eKdiag(X, Xcov)
 
+    @AutoFlow((float_type, [None, None]), (float_type,), (float_type, [None, None]))
+    def compute_eKdiag_CI(self, X, Xcov=None, CI=None):
+        return self.eKdiag(X, Xcov, CI)
+
     @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,))
     def compute_eKxz(self, Z, Xmu, Xcov):
         return self.eKxz(Z, Xmu, Xcov)
 
-    @AutoFlow((float_type,), (float_type,), (float_type,), (float_type,))
-    def compute_exKxz(self, Z, Xmu, Xcov, CI=None):
+    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,), (float_type, [None, None]))
+    def compute_eKxz_CI(self, Z, Xmu, Xcov, CI=None):
+        return self.eKxz(Z, Xmu, Xcov, CI)
+
+    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,))
+    def compute_exKxz(self, Z, Xmu, Xcov):
+        return self.exKxz(Z, Xmu, Xcov)
+
+    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,), (float_type, [None, None]))
+    def compute_exKxz_CI(self, Z, Xmu, Xcov, CI=None):
         return self.exKxz(Z, Xmu, Xcov, CI)
 
-    @AutoFlow((float_type,), (float_type,), (float_type,), (float_type,))
-    def compute_eKzxKxz(self, Z, Xmu, Xcov, CI=None):
+    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,))
+    def compute_eKzxKxz(self, Z, Xmu, Xcov):
+        return self.eKzxKxz(Z, Xmu, Xcov)
+
+    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,), (float_type, [None, None]))
+    def compute_eKzxKxz_CI(self, Z, Xmu, Xcov, CI=None):
         return self.eKzxKxz(Z, Xmu, Xcov, CI)
 
     def _check_quadrature(self):
