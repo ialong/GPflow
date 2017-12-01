@@ -24,17 +24,13 @@ class RBF(kernels.RBF):
 
     def eKxz(self, Z, Xmu, Xcov, CI=None):
         """
-        <K_{x, Z}>_{q(x)}
+        <K_{X, Z}>_{q(X)}
         :param Z: inducing inputs (MxD) or (Mx(D+E))
         :param Xmu: X means (NxD)
         :param Xcov: X covariance matrices (NxDxD)
         :param CI: (optional) control inputs (NxE)
         :return: NxM
         """
-        # use only active dimensions
-        Xcov = self._slice_cov(Xcov)
-        Z, Xmu = self._slice(Z, Xmu)
-
         D = tf.shape(Xmu)[1]
         E = 0 if CI is None else tf.shape(CI)[1]
         lengthscales = self.lengthscales if self.ARD else \
@@ -62,18 +58,13 @@ class RBF(kernels.RBF):
 
     def exKxz(self, Z, Xmu, Xcov, CI=None):
         """
-        <(x_t K_{x_{t-1}, Z})^T>_q_{x_{t-1:t}}
-        :param Z: inducing inputs (MxD) or (Mx(D+E)) 
+        exKxz[n] = <[x_n K_{x_{n-1}, Z}]^T>_q_{x_{n-1,n}}
+        :param Z: inducing inputs (MxD) or (Mx(D+E))
         :param Xmu: X means ((N+1)xD)
         :param Xcov: X covariance matrices (2xNxDxD)
         :param CI: (optional) control inputs (NxE)
         :return: NxMxD
         """
-        with tf.control_dependencies([
-            tf.assert_equal(tf.shape(Xmu)[0] - 1, tf.shape(Xcov)[1], name="assert_Xmu_Xcov_shape")
-        ]):
-            Xmu = tf.identity(Xmu)
-
         D = tf.shape(Xmu)[1]
         E = 0 if CI is None else tf.shape(CI)[1]
         lengthscales = self.lengthscales if self.ARD else \
@@ -103,17 +94,13 @@ class RBF(kernels.RBF):
 
     def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
         """
-        <K_{Z, x}K_{x, Z}>_{q(x)}
+        eKzxKxz[n] = <K_{Z, x_n}K_{x_n, Z}>_{q(x_n)}
         :param Z: inducing inputs (MxD) or (Mx(D+E))
         :param Xmu: X means (NxD)
         :param Xcov: X covariance matrices (NxDxD)
         :param CI: (optional) control inputs (NxE)
         :return: NxMxM
         """
-        # use only active dimensions
-        Xcov = self._slice_cov(Xcov)
-        Z, Xmu = self._slice(Z, Xmu)
-
         N = tf.shape(Xmu)[0]
         D = tf.shape(Xmu)[1]
         E = 0 if CI is None else tf.shape(CI)[1]
@@ -157,83 +144,130 @@ class Linear(kernels.Linear):
         :param CI: (optional) control inputs (NxE)
         :return: N
         """
-        # use only active dimensions
-        Xcov = self._slice_cov(Xcov)
-        Xmu, _ = self._slice(Xmu, None)
         D = tf.shape(Xmu)[1]
         E = 0 if CI is None else tf.shape(CI)[1]
-        variance = tf.zeros((D + E), dtype=float_type) + self.variance
+        variance = tf.zeros((D + E,), dtype=float_type) + self.variance
         eKdiag = tf.reduce_sum(variance[:D] * (tf.matrix_diag_part(Xcov) + tf.square(Xmu)), 1)
         if CI is not None:
             eKdiag += tf.reduce_sum(variance[D:] * tf.square(CI), 1)
         return eKdiag
 
+    def sum_eKdiag(self, Xmu, Xcov, CI=None):
+        """
+        \sum <diag(K_{X, X})>_{q(X)}
+        :param Xmu: kernel input (NxD)
+        :param Xcov: X covariance matrices (NxDxD)
+        :param CI: (optional) control inputs (NxE)
+        :return: ()
+        """
+        D = tf.shape(Xmu)[1]
+        E = 0 if CI is None else tf.shape(CI)[1]
+        variance = tf.zeros((D + E,), dtype=float_type) + self.variance
+        eKdiag = tf.reduce_sum(variance[:D] * tf.reduce_sum(tf.matrix_diag_part(Xcov) + tf.square(Xmu), 0), 1)
+        if CI is not None:
+            eKdiag += tf.reduce_sum(variance[D:] * tf.reduce_sum(tf.square(CI), 0), 1)
+        return eKdiag
+
     def eKxz(self, Z, Xmu, Xcov, CI=None):
         """
-        <K_{x, Z}>_{q(x)}
+        <K_{X, Z}>_{q(X)}
         :param Z: inducing inputs (MxD) or (Mx(D+E))
         :param Xmu: X means (NxD)
         :param Xcov: X covariance matrices (NxDxD)
         :param CI: (optional) control inputs (NxE)
         :return: NxM
         """
-        # use only active dimensions
-        Z, Xmu = self._slice(Z, Xmu)
         _X = tf.identity(Xmu) if CI is None else tf.concat([Xmu, CI], 1)
         return tf.matmul(_X, Z * self.variance, transpose_b=True)
 
+    def sum_eKxz(self, Z, Xmu, Xcov, CI=None):
+        """
+        \sum_n <K_{x_n, Z}>_{q(x_n)}
+        :param Z: inducing inputs (MxD) or (Mx(D+E))
+        :param Xmu: X means (NxD)
+        :param Xcov: X covariance matrices (NxDxD)
+        :param CI: (optional) control inputs (NxE)
+        :return: M
+        """
+        _X = tf.reduce_sum(Xmu, 0) if CI is None else tf.reduce_sum(tf.concat([Xmu, CI], 1), 0)
+        return tf.matmul(Z, tf.expand_dims(_X, 1) * self.variance)[:, 0]
+
     def exKxz(self, Z, Xmu, Xcov, CI=None):
         """
-        <(x_t K_{x_{t-1}, Z})^T>_q_{x_{t-1:t}}
+        exKxz[n] = <[x_n K_{x_{n-1}, Z}]^T>_q_{x_{n-1,n}}
         :param Z: inducing inputs (MxD) or (Mx(D+E))
         :param Xmu: X means ((N+1)xD)
         :param Xcov: X covariance matrices (2xNxDxD)
         :param CI: (optional) control inputs (NxE)
         :return: NxMxD
         """
-        with tf.control_dependencies([
-            tf.assert_equal(tf.shape(Xmu)[0] - 1, tf.shape(Xcov)[1], name="assert_Xmu_Xcov_shape")
-        ]):
-            Xmu = tf.identity(Xmu)
-
         N = tf.shape(Xmu)[0] - 1
         D = tf.shape(Xmu)[1]
-        E = 0 if CI is None else tf.shape(CI)[1]
-        variance = tf.zeros((D + E), dtype=float_type) + self.variance
-        exKxz = tf.matmul(tf.tile(tf.expand_dims(Z[:, :D] * variance[:D], 0), (N, 1, 1)), Xcov[1])
-        _X = tf.identity(Xmu) if CI is None else tf.concat([Xmu, CI], 1)
-        exKxz += tf.expand_dims(Xmu, 1) * tf.expand_dims(tf.matmul(_X, Z * self.variance, transpose_b=True), 2)
+        var_Z = self.variance * Z
+        tiled_Z = tf.tile(tf.expand_dims(var_Z[:, :D], 0), (N, 1, 1))  # NxMxD
+        exKxz = tf.matmul(tiled_Z, Xcov[1] + Xmu[:-1][..., None] * Xmu[1:][:, None, :])
+        if CI is not None:
+            exKxz += tf.matmul(CI, var_Z[:, D:], transpose_b=True)[..., None] * Xmu[1:][:, None, :]
+        return exKxz
+
+    def sum_exKxz(self, Z, Xmu, Xcov, CI=None):
+        """
+        \sum_n <[x_n K_{x_{n-1}, Z}]^T>_q_{x_{n-1,n}}
+        :param Z: inducing inputs (MxD) or (Mx(D+E))
+        :param Xmu: X means ((N+1)xD)
+        :param Xcov: X covariance matrices (2xNxDxD)
+        :param CI: (optional) control inputs (NxE)
+        :return: MxD
+        """
+        D = tf.shape(Xmu)[1]
+        var_Z = self.variance * Z
+        summed_XX = tf.reduce_sum(Xcov[1] + Xmu[:-1][..., None] * Xmu[1:][:, None, :], 0)
+        exKxz = tf.matmul(var_Z[:, :D], summed_XX)
+        if CI is not None:
+            summed_CX = tf.reduce_sum(CI[..., None] * Xmu[1:][:, None, :], 0)
+            exKxz += tf.matmul(var_Z[:, D:], summed_CX)
         return exKxz
 
     def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
         """
-        <K_{Z, x}K_{x, Z}>_{q(x)}
+        eKzxKxz[n] = <K_{Z, x_n}K_{x_n, Z}>_{q(x_n)}
         :param Z: inducing inputs (MxD) or (Mx(D+E))
         :param Xmu: X means (NxD)
         :param Xcov: X covariance matrices (NxDxD)
         :param CI: (optional) control inputs (NxE)
         :return: NxMxM
         """
-        # use only active dimensions
-        Xcov = self._slice_cov(Xcov)
-        Z, Xmu = self._slice(Z, Xmu)
         N = tf.shape(Xmu)[0]
-        D = tf.shape(Xmu)[1]
         E = 0 if CI is None else tf.shape(CI)[1]
-        variance = tf.zeros((D + E), dtype=float_type) + self.variance
-        mom2 = tf.expand_dims(Xmu, 1) * tf.expand_dims(Xmu, 2) + Xcov  # NxDxD
-        eZ = tf.tile(tf.expand_dims(Z, 0), (N, 1, 1))  # NxMxD
-        return self.variance ** 2.0 * tf.matmul(tf.matmul(eZ, mom2), eZ, transpose_b=True)
+        var_Z = self.variance * Z
+        tiled_Z = tf.tile(tf.expand_dims(var_Z, 0), (N, 1, 1))  # NxMxD
+        _X = tf.identity(Xmu) if CI is None else tf.concat([Xmu, CI], 1)
+        _Xcov = tf.identity(Xcov) if CI is None else tf.pad(Xcov, [[0,0],[0,E],[0,E]])
+        XX = _Xcov + tf.expand_dims(_X, 1) * tf.expand_dims(_X, 2)  # NxDxD
+        return tf.matmul(tf.matmul(tiled_Z, XX), tiled_Z, transpose_b=True)
+
+    def sum_eKzxKxz(self, Z, Xmu, Xcov, CI=None):
+        """
+        \sum_n <K_{Z, x_n}K_{x_n, Z}>_{q(x_n)}
+        :param Z: inducing inputs (MxD) or (Mx(D+E))
+        :param Xmu: X means (NxD)
+        :param Xcov: X covariance matrices (NxDxD)
+        :param CI: (optional) control inputs (NxE)
+        :return: MxM
+        """
+        E = 0 if CI is None else tf.shape(CI)[1]
+        var_Z = self.variance * Z
+        _X = tf.identity(Xmu) if CI is None else tf.concat([Xmu, CI], 1)
+        _Xcov = tf.reduce_sum(Xcov, 0) if CI is None else \
+            tf.pad(tf.reduce_sum(Xcov, 0), [[0, E], [0, E]])
+        XX = _Xcov + tf.reduce_sum(tf.expand_dims(_X, 1) * tf.expand_dims(_X, 2), 0)  # DxD
+        return tf.matmul(tf.matmul(var_Z, XX), var_Z, transpose_b=True)
 
 
 class Add(kernels.Add):
     """
-    Add
-    This version of Add will call the corresponding kernel expectations for each of the summed kernels. This will be
-    much better for kernels with analytically calculated kernel expectations. If quadrature is to be used, it's probably
-    better to do quadrature on the summed kernel function using `gpflow.kernels.Add` instead.
+    Add - eKzxKxz is only implemented for Linear + RBF
     """
-
     def __init__(self, kern_list):
         super(Add, self).__init__(kern_list)
 
@@ -274,6 +308,8 @@ class OldLinear(kernels.Linear):
         return self.variance * tf.matmul(Xmu, Z, transpose_b=True)
 
     def exKxz(self, Z, Xmu, Xcov, CI=None):
+        if self.ARD:
+            raise NotImplementedError
         with tf.control_dependencies([
             tf.assert_equal(tf.shape(Xmu)[1], tf.constant(self.input_dim, int_type),
                             message="Currently cannot handle slicing in exKxz."),
@@ -288,13 +324,8 @@ class OldLinear(kernels.Linear):
         return self.variance * tf.matmul(tf.tile(tf.expand_dims(Z, 0), (N, 1, 1)), op)
 
     def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
-        """
-        exKxz
-        :param Z: MxD
-        :param Xmu: NxD
-        :param Xcov: NxDxD
-        :return:
-        """
+        if self.ARD:
+            raise NotImplementedError
         # use only active dimensions
         Xcov = self._slice_cov(Xcov)
         Z, Xmu = self._slice(Z, Xmu)

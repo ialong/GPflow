@@ -160,6 +160,40 @@ class Kern(Parameterized):
     def compute_eKzxKxz_CI(self, Z, Xmu, Xcov, CI=None):
         return self.eKzxKxz(Z, Xmu, Xcov, CI)
 
+
+
+    @AutoFlow((float_type, [None, None]), (float_type,))
+    def compute_sum_eKdiag(self, X, Xcov=None):
+        return self.sum_eKdiag(X, Xcov)
+
+    @AutoFlow((float_type, [None, None]), (float_type,), (float_type, [None, None]))
+    def compute_sum_eKdiag_CI(self, X, Xcov=None, CI=None):
+        return self.sum_eKdiag(X, Xcov, CI)
+
+    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,))
+    def compute_sum_eKxz(self, Z, Xmu, Xcov):
+        return self.sum_eKxz(Z, Xmu, Xcov)
+
+    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,), (float_type, [None, None]))
+    def compute_sum_eKxz_CI(self, Z, Xmu, Xcov, CI=None):
+        return self.sum_eKxz(Z, Xmu, Xcov, CI)
+
+    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,))
+    def compute_sum_exKxz(self, Z, Xmu, Xcov):
+        return self.sum_exKxz(Z, Xmu, Xcov)
+
+    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,), (float_type, [None, None]))
+    def compute_sum_exKxz_CI(self, Z, Xmu, Xcov, CI=None):
+        return self.sum_exKxz(Z, Xmu, Xcov, CI)
+
+    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,))
+    def compute_sum_eKzxKxz(self, Z, Xmu, Xcov):
+        return self.sum_eKzxKxz(Z, Xmu, Xcov)
+
+    @AutoFlow((float_type, [None, None]), (float_type, [None, None]), (float_type,), (float_type, [None, None]))
+    def compute_sum_eKzxKxz_CI(self, Z, Xmu, Xcov, CI=None):
+        return self.sum_eKzxKxz(Z, Xmu, Xcov, CI)
+
     def _check_quadrature(self):
         if settings.numerics.ekern_quadrature == "warn":
             warnings.warn("Using numerical quadrature for kernel expectation of %s. Use gpflow.ekernels instead." %
