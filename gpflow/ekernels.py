@@ -146,7 +146,7 @@ class Linear(kernels.Linear):
         """
         D = tf.shape(Xmu)[1]
         E = 0 if CI is None else tf.shape(CI)[1]
-        variance = tf.zeros((D + E,), dtype=float_type) + self.variance
+        variance = self.variance if self.ARD else tf.zeros((D + E,), dtype=float_type) + self.variance
         eKdiag = tf.reduce_sum(variance[:D] * (tf.matrix_diag_part(Xcov) + tf.square(Xmu)), 1)
         if CI is not None:
             eKdiag += tf.reduce_sum(variance[D:] * tf.square(CI), 1)
@@ -162,7 +162,7 @@ class Linear(kernels.Linear):
         """
         D = tf.shape(Xmu)[1]
         E = 0 if CI is None else tf.shape(CI)[1]
-        variance = tf.zeros((D + E,), dtype=float_type) + self.variance
+        variance = self.variance if self.ARD else tf.zeros((D + E,), dtype=float_type) + self.variance
         eKdiag = tf.reduce_sum(variance[:D] * tf.reduce_sum(tf.matrix_diag_part(Xcov) + tf.square(Xmu), 0), 1)
         if CI is not None:
             eKdiag += tf.reduce_sum(variance[D:] * tf.reduce_sum(tf.square(CI), 0), 1)
@@ -240,7 +240,7 @@ class Linear(kernels.Linear):
         N = tf.shape(Xmu)[0]
         E = 0 if CI is None else tf.shape(CI)[1]
         var_Z = self.variance * Z
-        tiled_Z = tf.tile(tf.expand_dims(var_Z, 0), (N, 1, 1))  # NxMxD
+        tiled_Z = tf.tile(tf.expand_dims(var_Z, 0), (N, 1, 1))  # NxMx(D+E)
         _X = tf.identity(Xmu) if CI is None else tf.concat([Xmu, CI], 1)
         _Xcov = tf.identity(Xcov) if CI is None else tf.pad(Xcov, [[0,0],[0,E],[0,E]])
         XX = _Xcov + tf.expand_dims(_X, 1) * tf.expand_dims(_X, 2)  # NxDxD
@@ -283,12 +283,49 @@ class Add(kernels.Add):
     def eKzxKxz(self, Z, Xmu, Xcov, CI=None):  # TODO
         if len(self.kern_list) != 2:
             raise NotImplementedError
-        k_lin = self.kern_list[0] if type(self.kern_list[0]) is Linear else self.kern_list[1]
-        k_rbf = self.kern_list[0] if type(self.kern_list[0]) is RBF else self.kern_list[1]
+        k_rbf, k_lin = (self.kern_list[0], self.kern_list[1]) if type(self.kern_list[0]) is RBF \
+            else (self.kern_list[1], self.kern_list[0])
         assert type(k_lin) is Linear and type(k_rbf) is RBF
 
         all_sum = reduce(tf.add, [k.eKzxKxz(Z, Xmu, Xcov, CI) for k in self.kern_list])
-        return all_sum
+
+        N = tf.shape(Xmu)[0]
+        D = tf.shape(Xmu)[1]
+        E = 0 if CI is None else tf.shape(CI)[1]
+
+        k_lin_variance = k_lin.variance if k_lin.ARD else tf.zeros((D + E,), dtype=float_type) + k_lin.variance
+
+        lengthscales = k_rbf.lengthscales if k_rbf.ARD else \
+            tf.zeros((D + E,), dtype=float_type) + k_rbf.lengthscales  ## Begin RBF eKxz
+
+        chol_L_plus_Xcov = tf.cholesky(tf.matrix_diag(lengthscales[:D] ** 2) + Xcov)  # NxDxD
+        all_diffs = tf.transpose(Z[:, :D]) - tf.expand_dims(Xmu, 2)  # NxDxM
+
+        sqrt_det_L = tf.reduce_prod(lengthscales[:D])
+        sqrt_det_L_plus_Xcov = tf.exp(tf.reduce_sum(tf.log(tf.matrix_diag_part(chol_L_plus_Xcov)), axis=1))
+        determinants = sqrt_det_L / sqrt_det_L_plus_Xcov  # N
+
+        exponent_mahalanobis = tf.matrix_triangular_solve(chol_L_plus_Xcov, all_diffs, lower=True)  # NxDxM
+        exponent_mahalanobis = tf.reduce_sum(tf.square(exponent_mahalanobis), 1)  # NxM
+        if CI is not None:
+            ci_L_inv = CI / lengthscales[D:]  # NxE
+            z_L_inv = Z[:, D:] / lengthscales[D:]  # MxE
+            exponent_mahalanobis += tf.reduce_sum(tf.square(z_L_inv), 1) \
+                                    + tf.expand_dims(tf.reduce_sum(tf.square(ci_L_inv), 1), 1) \
+                                    - 2 * tf.matmul(ci_L_inv, z_L_inv, transpose_b=True)
+
+        exponent_mahalanobis = tf.exp(-0.5 * exponent_mahalanobis)  # NxM
+        eKxz_rbf = k_rbf.variance * (determinants[:, None] * exponent_mahalanobis)  ## End RBF eKxz NxM
+
+        tiled_Z = tf.tile(tf.expand_dims(Z[:, :D], 0), (N, 1, 1))  # NxMxD
+        cross_eKzxKxz = tf.cholesky_solve(chol_L_plus_Xcov,
+                                          tf.transpose((k_lin_variance[:D] * lengthscales[:D] ** 2.) * tiled_Z, [0, 2, 1]))
+        z_L_inv_Xcov = tf.matmul(tiled_Z, Xcov / lengthscales[:D, None] ** 2.)  # NxMxD
+        cross_eKzxKxz = tf.matmul((z_L_inv_Xcov + Xmu[:, None, :]) * eKxz_rbf[..., None],
+                                  cross_eKzxKxz)  # NxMxM
+        if CI is not None:
+            cross_eKzxKxz += tf.matmul(CI, Z[:, D:] * k_lin_variance[D:], transpose_b=True)[:, None, :]  # k_lin contribution
+        return all_sum + cross_eKzxKxz + tf.transpose(cross_eKzxKxz, [0, 2, 1])
 
 
 class OldLinear(kernels.Linear):
