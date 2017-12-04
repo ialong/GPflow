@@ -163,9 +163,9 @@ class Linear(kernels.Linear):
         D = tf.shape(Xmu)[1]
         E = 0 if CI is None else tf.shape(CI)[1]
         variance = self.variance if self.ARD else tf.zeros((D + E,), dtype=float_type) + self.variance
-        eKdiag = tf.reduce_sum(variance[:D] * tf.reduce_sum(tf.matrix_diag_part(Xcov) + tf.square(Xmu), 0), 1)
+        eKdiag = tf.reduce_sum(variance[:D] * tf.reduce_sum(tf.matrix_diag_part(Xcov) + tf.square(Xmu), 0))
         if CI is not None:
-            eKdiag += tf.reduce_sum(variance[D:] * tf.reduce_sum(tf.square(CI), 0), 1)
+            eKdiag += tf.reduce_sum(variance[D:] * tf.reduce_sum(tf.square(CI), 0))
         return eKdiag
 
     def eKxz(self, Z, Xmu, Xcov, CI=None):
@@ -190,7 +190,7 @@ class Linear(kernels.Linear):
         :return: M
         """
         _X = tf.reduce_sum(Xmu, 0) if CI is None else tf.reduce_sum(tf.concat([Xmu, CI], 1), 0)
-        return tf.matmul(Z, tf.expand_dims(_X, 1) * self.variance)[:, 0]
+        return tf.matmul(Z, tf.expand_dims(_X * self.variance, 1))[:, 0]
 
     def exKxz(self, Z, Xmu, Xcov, CI=None):
         """
