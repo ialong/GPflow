@@ -280,7 +280,7 @@ class Add(kernels.Add):
     def exKxz(self, Z, Xmu, Xcov, CI=None):
         return reduce(tf.add, [k.exKxz(Z, Xmu, Xcov, CI) for k in self.kern_list])
 
-    def eKzxKxz(self, Z, Xmu, Xcov, CI=None):  # TODO
+    def eKzxKxz(self, Z, Xmu, Xcov, CI=None):
         if len(self.kern_list) != 2:
             raise NotImplementedError
         k_rbf, k_lin = (self.kern_list[0], self.kern_list[1]) if type(self.kern_list[0]) is RBF \
