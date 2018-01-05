@@ -424,6 +424,40 @@ class OldAdd(kernels.Add):
     def Linear_RBF_eKzxKxz(self, Ka, Kb, Z, Xmu, Xcov):
         Xcov = self._slice_cov(Xcov)
         Z, Xmu = self._slice(Z, Xmu)
+        k_rbf, k_lin = (Ka, Kb) if type(Ka) is RBF else (Kb, Ka)
+        assert type(k_lin) is Linear, "%s is not %s" % (str(type(k_lin)), str(Linear))
+        assert type(k_rbf) is RBF, "%s is not %s" % (str(type(k_rbf)), str(RBF))
+
+        N = tf.shape(Xmu)[0]
+        D = tf.shape(Xmu)[1]
+
+        k_lin_variance = k_lin.variance if k_lin.ARD else tf.zeros((D,), dtype=float_type) + k_lin.variance
+
+        lengthscales = k_rbf.lengthscales if k_rbf.ARD else \
+            tf.zeros((D,), dtype=float_type) + k_rbf.lengthscales  ## Begin RBF eKxz
+
+        chol_L_plus_Xcov = tf.cholesky(tf.matrix_diag(lengthscales ** 2) + Xcov)  # NxDxD
+        all_diffs = tf.transpose(Z) - tf.expand_dims(Xmu, 2)  # NxDxM
+
+        sqrt_det_L = tf.reduce_prod(lengthscales)
+        sqrt_det_L_plus_Xcov = tf.exp(tf.reduce_sum(tf.log(tf.matrix_diag_part(chol_L_plus_Xcov)), axis=1))
+        determinants = sqrt_det_L / sqrt_det_L_plus_Xcov  # N
+
+        exponent_mahalanobis = tf.matrix_triangular_solve(chol_L_plus_Xcov, all_diffs, lower=True)  # NxDxM
+        exponent_mahalanobis = tf.reduce_sum(tf.square(exponent_mahalanobis), 1)  # NxM
+        exponent_mahalanobis = tf.exp(-0.5 * exponent_mahalanobis)  # NxM
+        eKxz_rbf = k_rbf.variance * (determinants[:, None] * exponent_mahalanobis)  ## End RBF eKxz NxM
+
+        tiled_Z = tf.tile(tf.expand_dims(Z, 0), (N, 1, 1))  # NxMxD
+        cross_eKzxKxz = tf.cholesky_solve(chol_L_plus_Xcov,
+                                          tf.transpose((k_lin_variance * lengthscales ** 2.) * tiled_Z, [0, 2, 1]))
+        z_L_inv_Xcov = tf.matmul(tiled_Z, Xcov / lengthscales[:, None] ** 2.)  # NxMxD
+        cross_eKzxKxz = tf.matmul((z_L_inv_Xcov + Xmu[:, None, :]) * eKxz_rbf[..., None], cross_eKzxKxz)  # NxMxM
+        return cross_eKzxKxz + tf.transpose(cross_eKzxKxz, [0, 2, 1])
+
+    def Linear_RBF_eKzxKxz_old(self, Ka, Kb, Z, Xmu, Xcov):
+        Xcov = self._slice_cov(Xcov)
+        Z, Xmu = self._slice(Z, Xmu)
         lin, rbf = (Ka, Kb) if type(Ka) is Linear else (Kb, Ka)
         assert type(lin) is Linear, "%s is not %s" % (str(type(lin)), str(Linear))
         assert type(rbf) is RBF, "%s is not %s" % (str(type(rbf)), str(RBF))
