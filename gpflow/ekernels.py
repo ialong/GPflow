@@ -404,7 +404,7 @@ class OldAdd(kernels.Add):
             for i, Ka in enumerate(eKxzs):
                 for Kb in eKxzs[i + 1:]:
                     op = Ka[:, None, :] * Kb[:, :, None]
-                    ct = tf.transpose(op, [0, 2, 1]) + op
+                    ct = op + tf.matrix_transpose(op, [0, 2, 1])
                     crossmeans.append(ct)
             crossmean = reduce(tf.add, crossmeans)
             return all_sum + crossmean
@@ -418,7 +418,7 @@ class OldAdd(kernels.Add):
                     except (KeyError, NotImplementedError) as e:
                         print(str(e))
                         crossexp = self.quad_eKzx1Kxz2(ka, kb, Z, Xmu, Xcov)
-                    crossexps.append(crossexp)
+                    crossexps.append(crossexp + tf.matrix_transpose(crossexp))
             return all_sum + reduce(tf.add, crossexps)
 
     def Linear_RBF_eKzxKxz(self, Ka, Kb, Z, Xmu, Xcov):
