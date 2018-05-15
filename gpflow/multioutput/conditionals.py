@@ -31,7 +31,7 @@ from ..kernels import Combination
 
 @conditional.register(object, SharedIndependentMof, SharedIndependentMok, object)
 @name_scope("conditional")
-def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, q_sqrt=None, white=False):
+def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, q_sqrt=None, white=False, Kzz=None):
     """
     Multioutput conditional for an independent kernel and shared inducing features.
     Same behaviour as conditional with non-multioutput kernels.
@@ -66,7 +66,7 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, 
     """
     print("Conditional: SharedIndependentMof - SharedIndepedentMok")
 
-    Kmm = Kuu(feat, kern, jitter=settings.numerics.jitter_level)  # M x M
+    Kmm = Kuu(feat, kern, jitter=settings.numerics.jitter_level) if Kzz is None else Kzz  # M x M
     Kmn = Kuf(feat, kern, Xnew)  # M x N
     if full_cov:
         Knn = kern.K(Xnew, full_cov_output=False)[0, ...]  # N x N
@@ -81,7 +81,7 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, 
 @conditional.register(object, SharedIndependentMof, SeparateIndependentMok, object)
 @conditional.register(object, SeparateIndependentMof, SharedIndependentMok, object)
 @name_scope("conditional")
-def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, q_sqrt=None, white=False):
+def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, q_sqrt=None, white=False, Kzz=None):
     """
     Multi-output GP with independent GP priors.
     Number of latent processes equals the number of outputs (L = P).
@@ -101,9 +101,9 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, 
 
     print("conditional: object, SharedIndependentMof, SeparateIndependentMok, object")
     # Following are: P x M x M  -  P x M x N  -  P x N(x N)
-    Kmms = Kuu(feat, kern, jitter=settings.numerics.jitter_level)  # P x M x M
+    Kmms = Kuu(feat, kern, jitter=settings.numerics.jitter_level) if Kzz is None else Kzz  # P x M x M
     Kmns = Kuf(feat, kern, Xnew)  # P x M x N
-    kern_list = kern.kern_list if isinstance(kern, Combination) else [kern.kern] * len(feat.feat_list)
+    kern_list = kern.kernels if isinstance(kern, Combination) else [kern.kern] * len(feat.feat_list)
     Knns = tf.stack([k.K(Xnew) if full_cov else k.Kdiag(Xnew) for k in kern_list], axis=0)
     fs = tf.transpose(f)[:, :, None]  # P x M x 1
     # P x 1 x M x M  or  P x M x 1
