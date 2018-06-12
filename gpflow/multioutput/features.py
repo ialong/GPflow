@@ -14,10 +14,11 @@
 
 import tensorflow as tf
 
-from .kernels import Mok, SharedIndependentMok, SeparateIndependentMok, SeparateMixedMok
-from ..features import InducingPoints, InducingFeature, Kuu, Kuf
-from ..dispatch import dispatch
 from .. import settings
+from ..dispatch import dispatch
+from ..features import InducingPoints, InducingFeature, Kuu, Kuf
+from ..params import ParamList
+from .kernels import Mok, SharedIndependentMok, SeparateIndependentMok, SeparateMixedMok
 
 
 class Mof(InducingFeature):
@@ -47,7 +48,7 @@ class SeparateIndependentMof(Mof):
     """
     def __init__(self, feat_list):
         Mof.__init__(self)
-        self.feat_list = feat_list
+        self.feat_list = ParamList(feat_list)
 
     def __len__(self):
         return len(self.feat_list[0])
@@ -90,7 +91,7 @@ def Kuf(feat, kern, Xnew):
     return tf.stack([Kuf(f, k, Xnew) for f, k in zip(feat.feat_list, kern.kernels)], axis=0)  # L x M x N
 
 
-@dispatch((SeparateIndependentMof, SharedIndependentMof), SeparateMixedMok, object) 
+@dispatch((SeparateIndependentMof, SharedIndependentMof), SeparateMixedMok, object)
 def Kuf(feat, kern, Xnew):
     kuf_impl = Kuf.dispatch(type(feat), SeparateIndependentMok, object)
     K = tf.transpose(kuf_impl(feat, kern, Xnew), [1, 0, 2])  # M x L x N
