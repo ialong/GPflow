@@ -112,8 +112,8 @@ def mvn_logp(d, L):
     :param L  : (DxD) Cholesky decomposition of the covariance matrix
     :return logp : (1) or (T) or (n_samplesxT) tensor of log densities
     """
-    dim, n_samples, T = (tf.shape(d)[0], tf.shape(d)[1], tf.shape(d)[2]) \
-        if d.shape.ndims == 3 else (tf.shape(d)[0], None, tf.shape(d)[1])
+    dim, n_samples, T = (tf.shape(d)[0], None, tf.shape(d)[1]) \
+        if d.shape.ndims == 2 else (tf.shape(d)[0], tf.shape(d)[1], tf.shape(d)[2])
 
     if n_samples is not None:
         d = tf.reshape(d, [dim, -1])
@@ -141,4 +141,4 @@ def diag_mvn_logp(d, sqrt_diag):
 
 
 def sum_mvn_logp(d, L):
-    return tf.reduce_sum(mvn_logp(d, L))  # requires TxD input
+    return tf.reduce_sum(mvn_logp(d, L))
