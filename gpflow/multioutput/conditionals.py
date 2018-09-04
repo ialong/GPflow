@@ -53,12 +53,12 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_output_cov=False, 
     Parameters
     ----------
     :param Xnew: data matrix, size N x D.
-    :param f: data matrix, M x P
+    :param f: data matrix, P x M or P x M x N
     :param full_cov: return the covariance between the datapoints
     :param full_output_cov: return the covariance between the outputs.
         Note: as we are using a independent kernel these covariances will be zero.
     :param q_sqrt: matrix of standard-deviations or Cholesky matrices,
-        size M x P or P x M x M.
+        size P x M or P x M x M.
     :param white: boolean of whether to use the whitened representation
     :return:
         - mean:     N x P
@@ -67,15 +67,26 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_output_cov=False, 
         about the shape of the variance, depending on `full_cov` and `full_output_cov`.
     """
     logger.debug("Conditional: SharedIndependentMof - SharedIndepedentMok")
+    f_ndims = f.shape.ndims
+    assert f_ndims is not None
 
-    Kmm = Kuu(feat, kern, jitter=settings.numerics.jitter_level) if Lm is None else None  # M x M
     Kmn = Kuf(feat, kern, Xnew)  # M x N
+    Kmm = Kuu(feat, kern, jitter=settings.numerics.jitter_level) if Lm is None else None  # M x M
     if full_cov:
         Knn = kern.K(Xnew, full_output_cov=False)[0, ...]  # N x N
     else:
         Knn = kern.Kdiag(Xnew, full_output_cov=False)[..., 0]  # N
 
-    fmean, fvar = base_conditional(Kmn, Kmm, Knn, f, full_cov=full_cov, q_sqrt=q_sqrt, white=white, Lm=Lm)  # N x P,  P x N x N or N x P
+    _f = tf.transpose(f) if f_ndims == 2 else f
+
+    fmean, fvar = base_conditional(Kmn, Kmm, Knn, _f, full_cov=full_cov, q_sqrt=q_sqrt, white=white, Lm=Lm)
+    if f_ndims == 3: fmean = tf.transpose(fmean)
+    if q_sqrt is None:
+        if full_cov:
+            fvar = tf.tile(fvar[None, :, :], [tf.shape(f)[0], 1, 1])
+        else:
+            fvar = tf.tile(fvar[:, None], [1, tf.shape(f)[0]])
+
     return fmean, _expand_independent_outputs(fvar, full_cov, full_output_cov)
 
 
@@ -102,35 +113,40 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_output_cov=False, 
     """
 
     logger.debug("conditional: object, SharedIndependentMof, SeparateIndependentMok, object")
+    f_ndims = f.shape.ndims
+    assert f_ndims is not None
+    if q_sqrt is not None:
+        assert q_sqrt.shape.ndims is not None
     # Following are: P x M x M  -  P x M x N  -  P x N(x N)
-    Kmms = Kuu(feat, kern, jitter=settings.numerics.jitter_level) if Lm is None else Lm  # P x M x M
     Kmns = Kuf(feat, kern, Xnew)  # P x M x N
+    Kmms = Kuu(feat, kern, jitter=settings.numerics.jitter_level) if Lm is None else Lm  # P x M x M
     kern_list = kern.kernels if isinstance(kern, Combination) else [kern.kern] * len(feat.feat_list)
     Knns = tf.stack([k.K(Xnew) if full_cov else k.Kdiag(Xnew) for k in kern_list], axis=0)
-    fs = tf.transpose(f)[:, :, None]  # P x M x 1
-    # P x 1 x M x M  or  P x M x 1
-    q_sqrts = tf.transpose(q_sqrt)[:, :, None] if q_sqrt.shape.ndims == 2 else q_sqrt[:, None, :, :]
+    fs = f[:, :, None] if f_ndims == 2 else f[:, None, :, :]  # P x M x 1 or P x 1 x M x N
+    # None or P x 1 x M or P x 1 x M x M
+    q_sqrts = None if q_sqrt is None else \
+        (q_sqrt[:, None, :] if q_sqrt.shape.ndims == 2 else q_sqrt[:, None, :, :])
 
     def single_gp_conditional(t):
-        if Lm is None:
-            Kmm, Kmn, Knn, f, q_sqrt = t
-            return base_conditional(Kmn, Kmm, Knn, f, full_cov=full_cov, q_sqrt=q_sqrt, white=white)
-        else:
-            Lm_p, Kmn, Knn, f, q_sqrt = t
-            return base_conditional(Kmn, None, Knn, f, full_cov=full_cov, q_sqrt=q_sqrt, white=white, Lm=Lm_p)
+        Kmn, Kmm, Knn, f = t[0], t[1] if Lm is None else None, t[2], t[3]
+        Lm_p = None if Lm is None else t[1]
+        q_sqrt_p = None if q_sqrt is None else t[-1]
+        return base_conditional(Kmn, Kmm, Knn, f, full_cov=full_cov, q_sqrt=q_sqrt_p, white=white, Lm=Lm_p)
 
-    rmu, rvar = tf.map_fn(single_gp_conditional,
-                          (Kmms, Kmns, Knns, fs, q_sqrts),
-                          (settings.float_type, settings.float_type))  # P x N x 1, P x 1 x N x N or P x N x 1
+    map_args = (Kmns, Kmms, Knns, fs)
+    if q_sqrt is not None: map_args += (q_sqrts,)
+    # [P x N x 1 or P x 1 x N], [P x N or P x N x N or P x 1 x N x N or P x N x 1]
+    fmean, fvar = tf.map_fn(single_gp_conditional, map_args,
+                            (settings.float_type, settings.float_type))
 
-    fmu = tf.matrix_transpose(rmu[:, :, 0])  # N x P
+    fmean = tf.transpose(fmean[:, :, 0] if f_ndims == 2 else fmean[:, 0, :])  # N x P
 
-    if full_cov:
-        fvar = rvar[:, 0, :, :]  # P x N x N
-    else:
-        fvar = tf.transpose(rvar[..., 0])  # N x P
+    if not full_cov:
+        fvar = tf.transpose(fvar if q_sqrt is None else fvar[..., 0])  # N x P
+    elif q_sqrt is not None:
+        fvar = fvar[:, 0, :, :]  # P x N x N
 
-    return fmu, _expand_independent_outputs(fvar, full_cov, full_output_cov)
+    return fmean, _expand_independent_outputs(fvar, full_cov, full_output_cov)
 
 
 @conditional.register(object, (SharedIndependentMof, SeparateIndependentMof), SeparateMixedMok, object)

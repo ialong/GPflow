@@ -174,15 +174,17 @@ def base_conditional(Kmn, Kmm, Knn, f, *, full_cov=False, q_sqrt=None, white=Fal
     :param Kmn: M x N
     :param Kmm: M x M
     :param Knn: N x N  or  N
-    :param f: M x R
+    :param f: M x R or R x M x N
     :param full_cov: bool
-    :param q_sqrt: None or M x R or R x M x M (lower triangular)
+    :param q_sqrt: None or R x M or R x M x M (lower triangular)
     :param white: bool
-    :return: N x R  or R x N x N
+    :return: N x R or R x N, [N x N or N] if q_sqrt is None else [R x N x N or N x R]
     """
     logger.debug("base conditional")
-    # compute kernel stuff
-    num_func = tf.shape(f)[1]  # R
+    assert f.shape.ndims is not None
+    if q_sqrt is not None:
+        assert q_sqrt.shape.ndims is not None
+
     if Lm is None:
         Lm = tf.cholesky(Kmm)
 
@@ -192,37 +194,36 @@ def base_conditional(Kmn, Kmm, Knn, f, *, full_cov=False, q_sqrt=None, white=Fal
     # compute the covariance due to the conditioning
     if full_cov:
         fvar = Knn - tf.matmul(A, A, transpose_a=True)  # N x N
-        fvar = tf.tile(fvar[None, :, :], [num_func, 1, 1])  # R x N x N
     else:
         fvar = Knn - tf.reduce_sum(tf.square(A), 0)  # N
-        fvar = tf.tile(fvar[None, :], [num_func, 1])  # R x N
 
     # another backsubstitution in the unwhitened case
     if not white:
         A = tf.matrix_triangular_solve(tf.transpose(Lm), A, lower=False)  # M x N
 
     # construct the conditional mean
-    fmean = tf.matmul(A, f, transpose_a=True)  # N x R
+    if f.shape.ndims == 3:
+        fmean = tf.reduce_sum(A * f, 1)  # R x N
+    else:
+        fmean = tf.matmul(A, f, transpose_a=True)  # N x R
 
     if q_sqrt is not None:
-        if q_sqrt.get_shape().ndims == 2:
-            LTA = A * tf.expand_dims(tf.transpose(q_sqrt), 2)  # R x M x N
-        elif q_sqrt.get_shape().ndims == 3:
+        if q_sqrt.shape.ndims == 2:
+            LTA = A * tf.expand_dims(q_sqrt, 2)  # R x M x N
+        elif q_sqrt.shape.ndims == 3:
             L = tf.matrix_band_part(q_sqrt, -1, 0)  # R x M x M
-            A_tiled = tf.tile(tf.expand_dims(A, 0), [num_func, 1, 1])
+            A_tiled = tf.tile(tf.expand_dims(A, 0), [tf.shape(q_sqrt)[0], 1, 1])
             LTA = tf.matmul(L, A_tiled, transpose_a=True)  # R x M x N
         else:  # pragma: no cover
             raise ValueError("Bad dimension for q_sqrt: %s" %
-                             str(q_sqrt.get_shape().ndims))
+                             str(q_sqrt.shape.ndims))
         if full_cov:
-            fvar = fvar + tf.matmul(LTA, LTA, transpose_a=True)  # R x N x N
+            fvar = fvar[None, ...] + tf.matmul(LTA, LTA, transpose_a=True)  # R x N x N
         else:
-            fvar = fvar + tf.reduce_sum(tf.square(LTA), 1)  # R x N
+            fvar = fvar[None, ...] + tf.reduce_sum(tf.square(LTA), 1)  # R x N
+            fvar = fvar[0][:, None] if q_sqrt.shape[0] == 1 else tf.transpose(fvar)  # N x R
 
-    if not full_cov:
-        fvar = tf.transpose(fvar)  # N x R
-
-    return fmean, fvar  # N x R, R x N x N or N x R
+    return fmean, fvar  # N x R or R x N, [N x N or N] if q_sqrt is None else [R x N x N or N x R]
 
 
 # ----------------------------------------------------------------------------
