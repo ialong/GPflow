@@ -181,7 +181,6 @@ def base_conditional(Kmn, Kmm, Knn, f, *, full_cov=False, q_sqrt=None, white=Fal
     :return: N x R or R x N, [N x N or N] if q_sqrt is None else [R x N x N or N x R]
     """
     logger.debug("base conditional")
-    assert f.shape.ndims is not None
     if q_sqrt is not None:
         assert q_sqrt.shape.ndims is not None
 
