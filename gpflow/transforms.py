@@ -318,11 +318,11 @@ class LowerTriangular(Transform):
 
        y = vec_to_tri(x)
 
-    x is the 'packed' version of shape num_matrices x (N**2 + N)/2
-    y is the 'unpacked' version of shape num_matrices x N x N.
+    x is the 'packed' version of shape prod(num_matrices) x (N**2 + N)/2
+    y is the 'unpacked' version of shape *num_matrices x N x N.
     
     :param N: the size of the final lower triangular matrices.
-    :param num_matrices: Number of matrices to be stored.
+    :param num_matrices: Number of matrices to be stored. int or tuple or list.
     :param squeeze: If num_matrices == 1, drop the redundant axis.
     
     :raises ValueError: squeezing is impossible when num_matrices > 1.
@@ -343,52 +343,57 @@ class LowerTriangular(Transform):
         """
         Transforms from the packed to unpacked representations (numpy)
         
-        :param x: packed numpy array. Must have shape `self.num_matrices x triangular_number
-        :return: Reconstructed numpy array y of shape self.num_matrices x N x N
+        :param x: packed numpy array. Must have shape prod(self.num_matrices) x triangular_number
+        :return: Reconstructed numpy array y of shape *self.num_matrices x N x N
         """
-        fwd = np.zeros((self.num_matrices, self.N, self.N), settings.float_type)
-        indices = np.tril_indices(self.N, 0)
+        total_matrices = np.prod(self.num_matrices)
+        fwd = np.zeros((total_matrices, self.N, self.N), settings.float_type)
+        indices = np.tril_indices(self.N)
         z = np.zeros(len(indices[0])).astype(int)
-        for i in range(self.num_matrices):
+        for i in range(total_matrices):
             fwd[(z + i,) + indices] = x[i, :]
-        return fwd.squeeze(axis=0) if self.squeeze else fwd
+        fwd = fwd.squeeze(axis=0) if self.squeeze else fwd
+        if not isinstance(self.num_matrices, int):
+            fwd = fwd.reshape(*self.num_matrices, self.N, self.N)
+        return fwd
 
     def backward(self, y):
         """
         Transforms a series of triangular matrices y to the packed representation x (numpy)
         
-        :param y: unpacked numpy array y, shape self.num_matrices x N x N
-        :return: packed numpy array, x, shape self.num_matrices x triangular number
+        :param y: unpacked numpy array y, shape *self.num_matrices x N x N
+        :return: packed numpy array, x, shape prod(self.num_matrices) x triangular number
         """
-        if self.squeeze:
-            y = y[None, :, :]
         ind = np.tril_indices(self.N)
-        return np.vstack([y_i[ind] for y_i in y])
+        return np.vstack([y_i[ind] for y_i in y.reshape(np.prod(self.num_matrices), self.N, self.N)])
 
     def forward_tensor(self, x):
         """
         Transforms from the packed to unpacked representations (tf.tensors)
         
-        :param x: packed tensor. Must have shape `self.num_matrices x triangular_number
-        :return: Reconstructed tensor y of shape self.num_matrices x N x N
+        :param x: packed tensor. Must have shape prod(self.num_matrices) x triangular_number
+        :return: Reconstructed tensor y of shape *self.num_matrices x N x N
         """
         fwd = vec_to_tri(x, self.N)
-        return tf.squeeze(fwd, axis=0) if self.squeeze else fwd
+        fwd = tf.squeeze(fwd, axis=0) if self.squeeze else fwd
+        if not isinstance(self.num_matrices, int):
+            fwd = tf.reshape(fwd, [*self.num_matrices, self.N, self.N])
+        return fwd
 
     def backward_tensor(self, y):
         """
         Transforms a series of triangular matrices y to the packed representation x (tf.tensors)
         
-        :param y: unpacked tensor with shape self.num_matrices, self.N, self.N
-        :return: packed tensor with shape self.num_matrices, (self.N**2 + self.N) / 2
+        :param y: unpacked tensor with shape *self.num_matrices x self.N x self.N
+        :return: packed tensor with shape prod(self.num_matrices) x ((self.N**2 + self.N) / 2)
         """
-        if self.squeeze:
-            y = tf.expand_dims(y, axis=0)
-        indices = np.vstack(np.tril_indices(self.N)).T
-        indices = itertools.product(np.arange(self.num_matrices), indices)
+        total_matrices = np.prod(self.num_matrices)
+        y = tf.reshape(y, [total_matrices, self.N, self.N])
+        indices = np.stack(np.tril_indices(self.N), 1)
+        indices = itertools.product(np.arange(total_matrices), indices)
         indices = np.array([np.hstack(x) for x in indices])
         triangular = tf.gather_nd(y, indices)
-        return tf.reshape(triangular, [self.num_matrices, (self.N**2 + self.N) // 2])
+        return tf.reshape(triangular, [total_matrices, (self.N**2 + self.N) // 2])
 
     def log_jacobian_tensor(self, x):
         """
