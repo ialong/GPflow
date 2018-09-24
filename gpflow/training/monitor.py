@@ -155,7 +155,7 @@ def restore_session(session: tf.Session, checkpoint_dir: str,
     saver.restore(session, checkpoint_path)
 
 
-def get_default_saver(max_to_keep: int=3) -> tf.train.Saver:
+def get_default_saver(max_to_keep: int=1000) -> tf.train.Saver:
     """
     Creates Tensorflow Saver object with 3 recent checkpoints to keep.
     :param max_to_keep: Maximum number of recent checkpoints to keep, defaults to 3
