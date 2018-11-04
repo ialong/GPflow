@@ -293,7 +293,7 @@ def _expectation(p, mean, none, kern, feat, nghp=None):
     Xmu, Xcov = p.mu, p.cov
 
     with tf.control_dependencies([tf.assert_equal(
-            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.tf_int),
+            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.int_type),
             message="Currently cannot handle slicing in exKxz.")]):
         Xmu = tf.identity(Xmu)
 
@@ -332,7 +332,7 @@ def _expectation(p, mean, none, kern, feat, nghp=None):
     Xmu, Xcov = p.mu, p.cov
 
     with tf.control_dependencies([tf.assert_equal(
-            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.tf_int),
+            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.int_type),
             message="Currently cannot handle slicing in exKxz.")]):
         Xmu = tf.identity(Xmu)
 
@@ -465,7 +465,7 @@ def _expectation(p, kern, feat, mean, none, nghp=None):
     Xmu, Xcov = p.mu, p.cov
 
     with tf.control_dependencies([tf.assert_equal(
-            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.tf_int),
+            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.int_type),
             message="Currently cannot handle slicing in exKxz.")]):
         Xmu = tf.identity(Xmu)
 
@@ -489,7 +489,7 @@ def _expectation(p, kern, feat, mean, none, nghp=None):
     Xmu, Xcov = p.mu, p.cov
 
     with tf.control_dependencies([tf.assert_equal(
-            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.tf_int),
+            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.int_type),
             message="Currently cannot handle slicing in exKxz.")]):
         Xmu = tf.identity(Xmu)
 
