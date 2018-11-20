@@ -265,7 +265,7 @@ def _expectation(p, kern, feat, none1, none2, nghp=None):
         if kern.ARD:
             lengthscales = kern.lengthscales
         else:
-            lengthscales = tf.zeros((D,), dtype=settings.tf_float) + kern.lengthscales
+            lengthscales = tf.zeros((D,), dtype=settings.float_type) + kern.lengthscales
 
         chol_L_plus_Xcov = tf.cholesky(tf.matrix_diag(lengthscales ** 2) + Xcov)  # NxDxD
 
@@ -391,7 +391,7 @@ def _expectation(p, kern1, feat1, kern2, feat2, nghp=None):
         D = tf.shape(Xmu)[1]
 
         squared_lengthscales = kern.lengthscales ** 2. if kern.ARD \
-            else tf.zeros((D,), dtype=settings.tf_float) + kern.lengthscales ** 2.
+            else tf.zeros((D,), dtype=settings.float_type) + kern.lengthscales ** 2.
 
         sqrt_det_L = tf.reduce_prod(0.5 * squared_lengthscales) ** 0.5
         C = tf.cholesky(0.5 * tf.matrix_diag(squared_lengthscales) + Xcov)  # NxDxD
@@ -867,10 +867,10 @@ def _expectation(p, rbf_kern, feat1, lin_kern, feat2, nghp=None):
         D = tf.shape(Xmu)[1]
 
         lin_kern_variances = lin_kern.variance if lin_kern.ARD \
-            else tf.zeros((D,), dtype=settings.tf_float) + lin_kern.variance
+            else tf.zeros((D,), dtype=settings.float_type) + lin_kern.variance
 
         rbf_kern_lengthscales = rbf_kern.lengthscales if rbf_kern.ARD \
-            else tf.zeros((D,), dtype=settings.tf_float) + rbf_kern.lengthscales  ## Begin RBF eKxz code:
+            else tf.zeros((D,), dtype=settings.float_type) + rbf_kern.lengthscales  ## Begin RBF eKxz code:
 
         chol_L_plus_Xcov = tf.cholesky(tf.matrix_diag(rbf_kern_lengthscales ** 2) + Xcov)  # NxDxD
 

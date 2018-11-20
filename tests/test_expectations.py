@@ -268,8 +268,8 @@ def test_RBF_eKzxKxz_gradient_notNaN(session_tf):
     kern.variance = 2.
 
     p = gpflow.probability_distributions.Gaussian(
-        tf.constant([[10]], dtype=gpflow.settings.tf_float),
-        tf.constant([[[0.1]]], dtype=gpflow.settings.tf_float))
+        tf.constant([[10]], dtype=gpflow.settings.float_type),
+        tf.constant([[[0.1]]], dtype=gpflow.settings.float_type))
     z = gpflow.features.InducingPoints([[-10.], [10.]])
 
     ekz = expectation(p, (kern, z), (kern, z))
