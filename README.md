@@ -1,3 +1,10 @@
+# gp-ssm
+
+gp-ssm is a project based on GPflow (see below). It can be used to create and train state-space models, especially ones where the transition function (which maps the current state to the next) is a Gaussian process.
+To use this package, follow the instructions to install GPflow (below) and find the code in the ```ssm``` folder.
+The code to run some example experiments can be found in the ```experiments``` folder.
+
+
 # GPflow
 
 GPflow is a package for building Gaussian process models in python, using [TensorFlow](http://www.tensorflow.org). It was originally created and is now managed by [James Hensman](http://jameshensman.github.io/) and [Alexander G. de G. Matthews](http://mlg.eng.cam.ac.uk/?portfolio=alex-matthews).
