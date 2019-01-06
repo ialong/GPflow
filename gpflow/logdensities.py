@@ -103,3 +103,42 @@ def multivariate_normal(x, mu, L):
     p -= 0.5 * num_dims * np.log(2 * np.pi)
     p -= tf.reduce_sum(tf.log(tf.matrix_diag_part(L)))
     return p
+
+
+def mvn_logp(d, L):
+    """
+    Computes the log-density of a multivariate normal.
+    :param d  : (Dx1) or (DxT) or (Dxn_samplesxT) tensor of (x - mu)
+    :param L  : (DxD) Cholesky decomposition of the covariance matrix
+    :return logp : (1) or (T) or (n_samplesxT) tensor of log densities
+    """
+    dim, n_samples, T = (tf.shape(d)[0], None, tf.shape(d)[1]) \
+        if d.shape.ndims == 2 else (tf.shape(d)[0], tf.shape(d)[1], tf.shape(d)[2])
+
+    if n_samples is not None:
+        d = tf.reshape(d, [dim, -1])
+
+    alpha = tf.matrix_triangular_solve(L, d, lower=True)  # DxT or Dx(n_samples*T)
+    logp = - 0.5 * tf.reduce_sum(tf.square(alpha), 0)  # T or n_samples*T
+    logp -= 0.5 * tf.cast(dim, L.dtype) * np.log(2 * np.pi)
+    logp -= tf.reduce_sum(tf.log(tf.abs(tf.diag_part(L))))
+    if n_samples is not None:
+        logp = tf.reshape(logp, [n_samples, T])  # n_samples x T
+    return logp
+
+
+def diag_mvn_logp(d, sqrt_diag):
+    """
+    Computes the log-density of a multivariate normal.
+    :param d : (D) or (TxD) or (n_samplesxTxD) tensor of (x - mu)
+    :param sqrt_diag : (D) square root diagonal of the covariance matrix
+    :return logp : () or (T) or (n_samplesxT) tensor of log densities
+    """
+    logp = - 0.5 * tf.reduce_sum(tf.square(d / sqrt_diag), -1)  # () or (T) or (n_samplesxT)
+    logp -= 0.5 * tf.cast(tf.shape(d)[-1], sqrt_diag.dtype) * np.log(2 * np.pi)
+    logp -= tf.reduce_sum(tf.log(tf.abs(sqrt_diag)))
+    return logp
+
+
+def sum_mvn_logp(d, L):
+    return tf.reduce_sum(mvn_logp(d, L))

@@ -6,7 +6,7 @@ import logging
 import inspect
 
 from collections import OrderedDict
-import configparser
+from six.moves import configparser
 
 import numpy as np
 import tensorflow as tf

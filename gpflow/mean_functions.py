@@ -34,6 +34,9 @@ class MeanFunction(Parameterized):
     MeanFunction classes can have parameters, see the Linear class for an
     example.
     """
+    def __init__(self, name=None):
+        super().__init__(name=name)
+
     def __call__(self, X):
         raise NotImplementedError("Implement the __call__ method for this mean function")
 
@@ -48,7 +51,7 @@ class Linear(MeanFunction):
     """
     y_i = A x_i + b
     """
-    def __init__(self, A=None, b=None):
+    def __init__(self, A=None, b=None, name=None):
         """
         A is a matrix which maps each element of X to Y, b is an additive
         constant.
@@ -58,7 +61,7 @@ class Linear(MeanFunction):
         """
         A = np.ones((1, 1)) if A is None else A
         b = np.zeros(1) if b is None else b
-        MeanFunction.__init__(self)
+        MeanFunction.__init__(self, name=name)
         self.A = Parameter(np.atleast_2d(A), dtype=settings.float_type)
         self.b = Parameter(b, dtype=settings.float_type)
 
@@ -71,8 +74,8 @@ class Identity(Linear):
     """
     y_i = x_i
     """
-    def __init__(self, input_dim=None):
-        Linear.__init__(self)
+    def __init__(self, input_dim=None, name=None):
+        Linear.__init__(self, name=name)
         self.input_dim = input_dim
 
     def __call__(self, X):
@@ -106,8 +109,8 @@ class Constant(MeanFunction):
     """
     y_i = c,,
     """
-    def __init__(self, c=None):
-        MeanFunction.__init__(self)
+    def __init__(self, c=None, name=None):
+        MeanFunction.__init__(self, name=name)
         c = np.zeros(1) if c is None else c
         self.c = Parameter(c)
 
@@ -118,13 +121,13 @@ class Constant(MeanFunction):
 
 
 class Zero(Constant):
-    def __init__(self, output_dim=1):
-        Constant.__init__(self)
+    def __init__(self, output_dim=1, name=None):
+        Constant.__init__(self, name=name)
         self.output_dim = output_dim
         del self.c
 
     def __call__(self, X):
-        return tf.zeros((tf.shape(X)[0], self.output_dim), dtype=settings.tf_float)
+        return tf.zeros((tf.shape(X)[0], self.output_dim), dtype=settings.float_type)
 
 
 class SwitchedMeanFunction(MeanFunction):
@@ -133,8 +136,8 @@ class SwitchedMeanFunction(MeanFunction):
     to the data 'label'.
     We assume the 'label' is stored in the extra column of X.
     """
-    def __init__(self, meanfunction_list):
-        MeanFunction.__init__(self)
+    def __init__(self, meanfunction_list, name=None):
+        MeanFunction.__init__(self, name=name)
         for m in meanfunction_list:
             assert isinstance(m, MeanFunction)
         self.meanfunction_list = ParamList(meanfunction_list)
@@ -155,8 +158,8 @@ class SwitchedMeanFunction(MeanFunction):
 
 
 class Additive(MeanFunction):
-    def __init__(self, first_part, second_part):
-        MeanFunction.__init__(self)
+    def __init__(self, first_part, second_part, name=None):
+        MeanFunction.__init__(self, name=name)
         self.add_1 = first_part
         self.add_2 = second_part
 
@@ -165,8 +168,8 @@ class Additive(MeanFunction):
 
 
 class Product(MeanFunction):
-    def __init__(self, first_part, second_part):
-        MeanFunction.__init__(self)
+    def __init__(self, first_part, second_part, name=None):
+        MeanFunction.__init__(self, name=name)
 
         self.prod_1 = first_part
         self.prod_2 = second_part

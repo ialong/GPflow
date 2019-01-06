@@ -12,7 +12,6 @@ Tutorials and examples
    notebooks/mcmc
    notebooks/ordinal
    notebooks/coreg_demo
-   notebooks/upper_bound
+   notebooks/upper_bound.ipynb
    notebooks/GPLVM
    notebooks/Sanity_check
-

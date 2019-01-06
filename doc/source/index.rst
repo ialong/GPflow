@@ -11,6 +11,5 @@ GPflow Documentation
 
    intro
    tutorialsAndExamples
-   advancedTutorials
    apiAndArchitecture
    derivations

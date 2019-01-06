@@ -110,6 +110,9 @@ def _quadrature_expectation(p, obj1, feature1, obj2, feature2, num_gauss_hermite
     """
     num_gauss_hermite_points = 100 if num_gauss_hermite_points is None else num_gauss_hermite_points
 
+    logger.warn("Quadrature is used to calculate the expectation. This means that "
+                "an analytical implementations is not available for the given combination.")
+
     if obj2 is None:
         eval_func = lambda x: get_eval_func(obj1, feature1)(x)
     elif obj1 is None:
@@ -148,6 +151,9 @@ def _quadrature_expectation(p, obj1, feature1, obj2, feature2, num_gauss_hermite
                transpose and then transpose the result of the expectation
     """
     num_gauss_hermite_points = 40 if num_gauss_hermite_points is None else num_gauss_hermite_points
+
+    logger.warn("Quadrature is used to calculate the expectation. This means that "
+                "an analytical implementations is not available for the given combination.")
 
     if obj2 is None:
         eval_func = lambda x: get_eval_func(obj1, feature1)(x)
@@ -223,11 +229,8 @@ def expectation(p, obj1, obj2=None, nghp=None):
 
     try:
         return _expectation(p, obj1, feat1, obj2, feat2, nghp=nghp)
-    except NotImplementedError as e:  # pragma: no cover
-
-        warn_msg = "Quadrature is used to calculate the expectation. " + str(e)
-        logger.warn(warn_msg)
-
+    except NotImplementedError as e:
+        print(str(e))
         return _quadrature_expectation(p, obj1, feat1, obj2, feat2, nghp)
 
 
@@ -254,7 +257,7 @@ def _expectation(p, kern, feat, none1, none2, nghp=None):
 
     :return: NxM
     """
-    with params_as_tensors_for(kern, feat):
+    with params_as_tensors_for(kern), params_as_tensors_for(feat):
         # use only active dimensions
         Xcov = kern._slice_cov(p.cov)
         Z, Xmu = kern._slice(feat.Z, p.mu)
@@ -262,7 +265,7 @@ def _expectation(p, kern, feat, none1, none2, nghp=None):
         if kern.ARD:
             lengthscales = kern.lengthscales
         else:
-            lengthscales = tf.zeros((D,), dtype=settings.tf_float) + kern.lengthscales
+            lengthscales = tf.zeros((D,), dtype=settings.float_type) + kern.lengthscales
 
         chol_L_plus_Xcov = tf.cholesky(tf.matrix_diag(lengthscales ** 2) + Xcov)  # NxDxD
 
@@ -290,11 +293,11 @@ def _expectation(p, mean, none, kern, feat, nghp=None):
     Xmu, Xcov = p.mu, p.cov
 
     with tf.control_dependencies([tf.assert_equal(
-            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.tf_int),
+            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.int_type),
             message="Currently cannot handle slicing in exKxz.")]):
         Xmu = tf.identity(Xmu)
 
-    with params_as_tensors_for(kern, feat):
+    with params_as_tensors_for(kern), params_as_tensors_for(feat):
         D = tf.shape(Xmu)[1]
         lengthscales = kern.lengthscales if kern.ARD \
             else tf.zeros((D,), dtype=settings.float_type) + kern.lengthscales
@@ -329,11 +332,11 @@ def _expectation(p, mean, none, kern, feat, nghp=None):
     Xmu, Xcov = p.mu, p.cov
 
     with tf.control_dependencies([tf.assert_equal(
-            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.tf_int),
+            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.int_type),
             message="Currently cannot handle slicing in exKxz.")]):
         Xmu = tf.identity(Xmu)
 
-    with params_as_tensors_for(kern, feat):
+    with params_as_tensors_for(kern), params_as_tensors_for(feat):
         D = tf.shape(Xmu)[1]
         lengthscales = kern.lengthscales if kern.ARD \
             else tf.zeros((D,), dtype=settings.float_type) + kern.lengthscales
@@ -361,109 +364,58 @@ def _expectation(p, kern1, feat1, kern2, feat2, nghp=None):
     Compute the expectation:
     expectation[n] = <Ka_{Z1, x_n} Kb_{x_n, Z2}>_p(x_n)
         - Ka_{.,.}, Kb_{.,.} :: RBF kernels
-    Ka and Kb as well as Z1 and Z2 can differ from each other.
+    Ka and Kb as well as Z1 and Z2 can differ from each other, but this is supported
+    only if the Gaussian p is Diagonal (p.cov NxD) and Ka, Kb have disjoint active_dims
+    in which case the joint expectations simplify into a product of expectations
 
-    :return: N x dim(Z1) x dim(Z2)
+    :return: NxMxM
     """
-
-    if kern1.on_separate_dims(kern2) and isinstance(p, DiagonalGaussian):
-        # no joint expectations required
+    if kern1.on_separate_dims(kern2) and isinstance(p, DiagonalGaussian):  # no joint expectations required
         eKxz1 = expectation(p, (kern1, feat1))
         eKxz2 = expectation(p, (kern2, feat2))
         return eKxz1[:, :, None] * eKxz2[:, None, :]
 
-    Ka, Kb = kern1, kern2
+    if feat1 != feat2 or kern1 != kern2:
+        raise NotImplementedError("The expectation over two kernels has only an "
+                                  "analytical implementation if both kernels are equal.")
 
-    with params_as_tensors_for(Ka, feat1, Kb, feat2):
+    kern = kern1
+    feat = feat1
 
+    with params_as_tensors_for(kern), params_as_tensors_for(feat):
         # use only active dimensions
-        Xcov = Ka._slice_cov(tf.matrix_diag(p.cov) if isinstance(p, DiagonalGaussian) else p.cov)
-
-        Z1, Xmu = Ka._slice(feat1.Z, p.mu)
+        Xcov = kern._slice_cov(tf.matrix_diag(p.cov) if isinstance(p, DiagonalGaussian) else p.cov)
+        Z, Xmu = kern._slice(feat.Z, p.mu)
 
         N = tf.shape(Xmu)[0]
         D = tf.shape(Xmu)[1]
 
-        def get_squared_length_scales(kern):
-            squared_lengthscales = kern.lengthscales ** 2. if kern.ARD \
-                        else tf.zeros((D,), dtype=settings.tf_float) + kern.lengthscales ** 2.
-            return squared_lengthscales
+        squared_lengthscales = kern.lengthscales ** 2. if kern.ARD \
+            else tf.zeros((D,), dtype=settings.float_type) + kern.lengthscales ** 2.
 
-        if Ka == Kb:
-            La = get_squared_length_scales(Ka)
-            Lb = La
-            half_mean_L = La * 0.5  # average length scale
-        else:
-            La, Lb = map(get_squared_length_scales, (Ka, Kb))
-            half_mean_L = La * Lb / (La + Lb)  # average length scale
-
-        sqrt_det_L = tf.reduce_prod(half_mean_L) ** 0.5
-        C = tf.cholesky(tf.matrix_diag(half_mean_L) + Xcov)  # [N, D, D]
+        sqrt_det_L = tf.reduce_prod(0.5 * squared_lengthscales) ** 0.5
+        C = tf.cholesky(0.5 * tf.matrix_diag(squared_lengthscales) + Xcov)  # NxDxD
         dets = sqrt_det_L / tf.exp(tf.reduce_sum(tf.log(tf.matrix_diag_part(C)), axis=1))  # N
 
-        # for mahalanobis computation we need Zᵀ (CCᵀ)⁻¹ Z  as well as C⁻¹ Z
-        # with Z = Z₁, Z₂  for two rbf kernels
-        def get_cholesky_solve_terms(Z, C=C):
-            C_inv_z = tf.matrix_triangular_solve(
-                C, tf.tile(tf.expand_dims(tf.transpose(Z), 0),
-                           [N, 1, 1]), lower=True)  # [N, D, M]
-            z_CC_inv_z = tf.reduce_sum(tf.square(C_inv_z), 1)  # [N, M]
+        C_inv_mu = tf.matrix_triangular_solve(C, tf.expand_dims(Xmu, 2), lower=True)  # NxDx1
+        C_inv_z = tf.matrix_triangular_solve(C,
+                                             tf.tile(tf.expand_dims(tf.transpose(Z) / 2., 0), [N, 1, 1]),
+                                             lower=True)  # NxDxM
+        mu_CC_inv_mu = tf.expand_dims(tf.reduce_sum(tf.square(C_inv_mu), 1), 2)  # Nx1x1
+        z_CC_inv_z = tf.reduce_sum(tf.square(C_inv_z), 1)  # NxM
+        zm_CC_inv_zn = tf.matmul(C_inv_z, C_inv_z, transpose_a=True)  # NxMxM
+        two_z_CC_inv_mu = 2 * tf.matmul(C_inv_z, C_inv_mu, transpose_a=True)[:, :, 0]  # NxM
 
-            return C_inv_z, z_CC_inv_z
+        exponent_mahalanobis = mu_CC_inv_mu + tf.expand_dims(z_CC_inv_z, 1) + \
+                               tf.expand_dims(z_CC_inv_z, 2) + 2 * zm_CC_inv_zn - \
+                               tf.expand_dims(two_z_CC_inv_mu, 2) - tf.expand_dims(two_z_CC_inv_mu, 1)  # NxMxM
+        exponent_mahalanobis = tf.exp(-0.5 * exponent_mahalanobis)  # NxMxM
 
-        C_inv_mu = tf.matrix_triangular_solve(C, tf.expand_dims(Xmu, 2), lower=True)  # [N, D, 1]
-        mu_CC_inv_mu = tf.expand_dims(tf.reduce_sum(tf.square(C_inv_mu), 1), 2)  # [N, 1, 1]
-
-        C_inv_z1, z1_CC_inv_z1 = get_cholesky_solve_terms(Z1 / La * half_mean_L)
-        z1_CC_inv_mu = 2 * tf.matmul(C_inv_z1, C_inv_mu, transpose_a=True)[:, :, 0]  # [N, M1]
-
-        if feat1 == feat2 and Ka == Kb:
-            # in this case Z2==Z1 so we can reuse the Z1 terms
-            C_inv_z2, z2_CC_inv_z2  = C_inv_z1, z1_CC_inv_z1
-            z2_CC_inv_mu = z1_CC_inv_mu  # [N, M]
-            Z2 = Z1
-        else:
-            # compute terms related to Z2
-            Z2, _ = Kb._slice(feat2.Z, p.mu)
-            C_inv_z2, z2_CC_inv_z2 = get_cholesky_solve_terms(Z2 / Lb * half_mean_L)
-            z2_CC_inv_mu = 2 * tf.matmul(C_inv_z2, C_inv_mu, transpose_a=True)[:, :, 0]  # [N, M2]
-
-        z1_CC_inv_z2 = tf.matmul(C_inv_z1, C_inv_z2, transpose_a=True)  # [N, M1, M2]
-
-        # expand dims for broadcasting
-        # along M1
-        z2_CC_inv_mu = tf.expand_dims(z2_CC_inv_mu, 1)  # [N, 1, M2]
-        z2_CC_inv_z2 = tf.expand_dims(z2_CC_inv_z2, 1)
-
-        # along M2
-        z1_CC_inv_mu = tf.expand_dims(z1_CC_inv_mu, 2)  # [N, M1, 1]
-        z1_CC_inv_z1 = tf.expand_dims(z1_CC_inv_z1, 2)
-
-        # expanded version of ((Z1 + Z2)-mu) (CCT)-1 ((Z1 + Z2)-mu)
-        mahalanobis = mu_CC_inv_mu + z2_CC_inv_z2 + \
-                      z1_CC_inv_z1 + 2 * z1_CC_inv_z2 - \
-                      z1_CC_inv_mu - z2_CC_inv_mu  # [N, M1, M2]
-
-        exp_mahalanobis = tf.exp(-0.5 * mahalanobis)  # [N, M1, M2]
-
-        if Z1 == Z2:
-            # CAVEAT : Compute sqrt(self.K(Z)) explicitly
-            # to prevent automatic gradient from
-            # being NaN sometimes, see pull request #615
-            sqrt_exp_dist = tf.exp(-0.25 * Ka.scaled_square_dist(Z1, None))
-        else:
-            # Compute exp( -.5 (Z-Z')^top (L_1+L_2)^{-1} (Z-Z') )
-            lengthscales_rms = tf.sqrt(La + Lb)
-            Z1 = Z1 / lengthscales_rms
-            Z1sqr = tf.reduce_sum(tf.square(Z1), axis=1)
-            Z2 = Z2 / lengthscales_rms
-            Z2sqr = tf.reduce_sum(tf.square(Z2), axis=1)
-            dist = -2 * tf.matmul(Z1, Z2, transpose_b=True) \
-                   + tf.reshape(Z1sqr, (-1, 1)) + tf.reshape(Z2sqr, (1, -1))
-            sqrt_exp_dist = tf.exp(-0.5 * dist)  # M1 x M2
-
-        return Ka.variance * Kb.variance * sqrt_exp_dist * \
-               tf.reshape(dets, [N, 1, 1]) * exp_mahalanobis
+        # Compute sqrt(self.K(Z)) explicitly to prevent automatic gradient from
+        # being NaN sometimes, see pull request #615
+        kernel_sqrt = tf.exp(-0.25 * kern.square_dist(Z, None))
+        return kern.variance ** 2 * kernel_sqrt * \
+               tf.reshape(dets, [N, 1, 1]) * exponent_mahalanobis
 
 
 # =============================== Linear Kernel ===============================
@@ -494,7 +446,7 @@ def _expectation(p, kern, feat, none1, none2, nghp=None):
 
     :return: NxM
     """
-    with params_as_tensors_for(kern, feat):
+    with params_as_tensors_for(kern), params_as_tensors_for(feat):
         # use only active dimensions
         Z, Xmu = kern._slice(feat.Z, p.mu)
 
@@ -513,11 +465,11 @@ def _expectation(p, kern, feat, mean, none, nghp=None):
     Xmu, Xcov = p.mu, p.cov
 
     with tf.control_dependencies([tf.assert_equal(
-            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.tf_int),
+            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.int_type),
             message="Currently cannot handle slicing in exKxz.")]):
         Xmu = tf.identity(Xmu)
 
-    with params_as_tensors_for(kern, feat):
+    with params_as_tensors_for(kern), params_as_tensors_for(feat):
         N = tf.shape(Xmu)[0]
         var_Z = kern.variance * feat.Z  # MxD
         tiled_Z = tf.tile(tf.expand_dims(var_Z, 0), (N, 1, 1))  # NxMxD
@@ -537,11 +489,11 @@ def _expectation(p, kern, feat, mean, none, nghp=None):
     Xmu, Xcov = p.mu, p.cov
 
     with tf.control_dependencies([tf.assert_equal(
-            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.tf_int),
+            tf.shape(Xmu)[1], tf.constant(kern.input_dim, settings.int_type),
             message="Currently cannot handle slicing in exKxz.")]):
         Xmu = tf.identity(Xmu)
 
-    with params_as_tensors_for(kern, feat):
+    with params_as_tensors_for(kern), params_as_tensors_for(feat):
         N = tf.shape(Xmu)[0] - 1
         var_Z = kern.variance * feat.Z  # MxD
         tiled_Z = tf.tile(tf.expand_dims(var_Z, 0), (N, 1, 1))  # NxMxD
@@ -573,7 +525,7 @@ def _expectation(p, kern1, feat1, kern2, feat2, nghp=None):
     kern = kern1
     feat = feat1
 
-    with params_as_tensors_for(kern, feat):
+    with params_as_tensors_for(kern), params_as_tensors_for(feat):
         # use only active dimensions
         Xcov = kern._slice_cov(tf.matrix_diag(p.cov) if isinstance(p, DiagonalGaussian) else p.cov)
         Z, Xmu = kern._slice(feat.Z, p.mu)
@@ -788,7 +740,7 @@ def _expectation(p, mean1, none1, mean2, none2, nghp=None):
 
     :return: NxQ1xQ2
     """
-    with params_as_tensors_for(mean1, mean2):
+    with params_as_tensors_for(mean1), params_as_tensors_for(mean2):
         e_xxt = p.cov + (p.mu[:, :, None] * p.mu[:, None, :])  # NxDxD
         e_A1t_xxt_A2 = tf.einsum("iq,nij,jz->nqz", mean1.A, e_xxt, mean2.A)  # NxQ1xQ2
         e_A1t_x_b2t = tf.einsum("iq,ni,z->nqz", mean1.A, p.mu, mean2.b)  # NxQ1xQ2
@@ -905,7 +857,8 @@ def _expectation(p, rbf_kern, feat1, lin_kern, feat2, nghp=None):
     if rbf_kern.active_dims != lin_kern.active_dims:
         raise NotImplementedError("active_dims have to be the same for both kernels.")
 
-    with params_as_tensors_for(rbf_kern, lin_kern, feat1, feat2):
+    with params_as_tensors_for(rbf_kern), params_as_tensors_for(lin_kern), \
+         params_as_tensors_for(feat1), params_as_tensors_for(feat2):
         # use only active dimensions
         Xcov = rbf_kern._slice_cov(tf.matrix_diag(p.cov) if isinstance(p, DiagonalGaussian) else p.cov)
         Z, Xmu = rbf_kern._slice(feat1.Z, p.mu)
@@ -914,10 +867,10 @@ def _expectation(p, rbf_kern, feat1, lin_kern, feat2, nghp=None):
         D = tf.shape(Xmu)[1]
 
         lin_kern_variances = lin_kern.variance if lin_kern.ARD \
-            else tf.zeros((D,), dtype=settings.tf_float) + lin_kern.variance
+            else tf.zeros((D,), dtype=settings.float_type) + lin_kern.variance
 
         rbf_kern_lengthscales = rbf_kern.lengthscales if rbf_kern.ARD \
-            else tf.zeros((D,), dtype=settings.tf_float) + rbf_kern.lengthscales  ## Begin RBF eKxz code:
+            else tf.zeros((D,), dtype=settings.float_type) + rbf_kern.lengthscales  ## Begin RBF eKxz code:
 
         chol_L_plus_Xcov = tf.cholesky(tf.matrix_diag(rbf_kern_lengthscales ** 2) + Xcov)  # NxDxD
 
