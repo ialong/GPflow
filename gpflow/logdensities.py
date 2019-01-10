@@ -133,16 +133,18 @@ def mvn_logp(d, L=None):
     return logp
 
 
-def diag_mvn_logp(d, sqrt_diag):
+def diag_mvn_logp(d, sqrt_diag=None):
     """
     Computes the log-density of a multivariate normal.
     :param d : (D) or (TxD) or (n_samplesxTxD) tensor of (x - mu)
-    :param sqrt_diag : (D) square root diagonal of the covariance matrix
+    :param sqrt_diag : (D) square root diagonal of the covariance matrix or None for Identity covariance
     :return logp : () or (T) or (n_samplesxT) tensor of log densities
     """
-    logp = - 0.5 * tf.reduce_sum(tf.square(d / sqrt_diag), -1)  # () or (T) or (n_samplesxT)
-    logp -= 0.5 * tf.cast(tf.shape(d)[-1], sqrt_diag.dtype) * np.log(2 * np.pi)
-    logp -= tf.reduce_sum(tf.log(tf.abs(sqrt_diag)))
+    logp = tf.square(d if sqrt_diag is None else (d / sqrt_diag))
+    logp = - 0.5 * tf.reduce_sum(logp, -1)  # () or (T) or (n_samplesxT)
+    logp -= 0.5 * tf.cast(tf.shape(d)[-1], d.dtype) * np.log(2 * np.pi)
+    if sqrt_diag is not None:
+        logp -= tf.reduce_sum(tf.log(tf.abs(sqrt_diag)))
     return logp
 
 
