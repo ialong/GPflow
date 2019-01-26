@@ -1,8 +1,8 @@
 # gp-ssm
 
-gp-ssm is a project based on GPflow (see below). It can be used to create and train state-space models, especially ones where the transition function (which maps the current state to the next) is a Gaussian process.
+gp-ssm is a project based on GPflow (see below). It can be used to create and train state-space models, especially ones where the transition function is modelled by a Gaussian process.
 To use this package, follow the instructions to install GPflow (below) and find the code in the ```ssm``` folder.
-The code to run some example experiments can be found in the ```experiments``` folder.
+The code to run some example experiments can be found in the ```experiments``` folder. The relevant data is all contained in ```datasets``` (under corresponding sub-folders).
 
 
 # GPflow
