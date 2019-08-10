@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import sys
-
 import tensorflow as tf
 
 from . import optimizer
@@ -32,7 +31,7 @@ class _TensorFlowOptimizer(optimizer.Optimizer):
         super().__init__()
         self._optimizer = tf_optimizer(*args, **kwargs)
         self._minimize_operation = None
-    
+
     def make_optimize_tensor(self, model, session=None, var_list=None, **kwargs):
         """
         Make Tensorflow optimization tensor.
@@ -55,7 +54,7 @@ class _TensorFlowOptimizer(optimizer.Optimizer):
             model.initialize(session=session)
             self._initialize_optimizer(session)
             return minimize
-    
+
     def make_optimize_action(self, model, session=None, var_list=None, **kwargs):
         """
         Build Optimization action task with Tensorflow optimizer.
@@ -80,7 +79,7 @@ class _TensorFlowOptimizer(optimizer.Optimizer):
         opt.with_optimizer_tensor(optimizer_tensor)
         opt.with_run_kwargs(**run_kwargs)
         return opt
-    
+
     def minimize(self, model, session=None, var_list=None, feed_dict=None,
                  maxiter=1000, initialize=False, anchor=True, step_callback=None, **kwargs):
         """
@@ -106,9 +105,9 @@ class _TensorFlowOptimizer(optimizer.Optimizer):
             raise ValueError('The `model` argument must be a GPflow model.')
 
         opt = self.make_optimize_action(model,
-            session=session,
-            var_list=var_list,
-            feed_dict=feed_dict, **kwargs)
+                                        session=session,
+                                        var_list=var_list,
+                                        feed_dict=feed_dict, **kwargs)
 
         self._model = opt.model
         self._minimize_operation = opt.optimizer_tensor
@@ -157,17 +156,18 @@ def _register_optimizer(name, optimizer_type):
     if optimizer_type.__base__ is not tf.train.Optimizer:
         raise ValueError('Wrong TensorFlow optimizer type passed: "{0}".'
                          .format(optimizer_type))
-    gp_optimizer = type(name, (_TensorFlowOptimizer, ), {})
+    gp_optimizer = type(name, (_TensorFlowOptimizer,), {})
     _REGISTERED_TENSORFLOW_OPTIMIZERS[name] = optimizer_type
     module = sys.modules[__name__]
     setattr(module, name, gp_optimizer)
 
 
 # Create GPflow optimizer classes with same names as TensorFlow optimizers
-for key, train_type in tf.train.__dict__.items():
+for name in dir(tf.train):
     suffix = 'Optimizer'
-    if key != suffix and key.endswith(suffix):
-        _register_optimizer(key, train_type)
-
+    if name != suffix and name.endswith(suffix):
+        train_type = getattr(tf.train, name, None)
+        if train_type is not None:
+            _register_optimizer(name, train_type)
 
 __all__ = list(_REGISTERED_TENSORFLOW_OPTIMIZERS.keys())
