@@ -167,6 +167,7 @@ class SVGP(GPModel):
 
     @params_as_tensors
     def _build_predict(self, Xnew, full_cov=False, full_output_cov=False):
-        mu, var = conditional(Xnew, self.feature, self.kern, self.q_mu, q_sqrt=self.q_sqrt, full_cov=full_cov,
-                              white=self.whiten, full_output_cov=full_output_cov)
+        mu, var = conditional(Xnew, self.feature, self.kern,
+                              tf.transpose(self.q_mu, [1, 0]), q_sqrt=self.q_sqrt,
+                              full_cov=full_cov, white=self.whiten, full_output_cov=full_output_cov)
         return mu + self.mean_function(Xnew), var
